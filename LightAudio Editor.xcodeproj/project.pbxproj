@@ -1,0 +1,286 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 52;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		BF0000010000000000000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001001 /* AppDelegate.swift */; };
+		BF0000010000000000000002 /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001002 /* MainWindowController.swift */; };
+		BF0000010000000000000003 /* ProjectController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001003 /* ProjectController.swift */; };
+		BF0000010000000000000004 /* CrashRecoveryController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001004 /* CrashRecoveryController.swift */; };
+		BF0000010000000000000005 /* Project.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001005 /* Project.swift */; };
+		BF0000010000000000000006 /* MediaAsset.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001006 /* MediaAsset.swift */; };
+		BF0000010000000000000007 /* Timeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001007 /* Timeline.swift */; };
+		BF0000010000000000000008 /* ExportSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001008 /* ExportSettings.swift */; };
+		BF0000010000000000000009 /* FileReferenceResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001009 /* FileReferenceResolver.swift */; };
+		BF000001000000000000000A /* ProjectFileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000100A /* ProjectFileService.swift */; };
+		BF000001000000000000000B /* AutosaveRecoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000100B /* AutosaveRecoveryService.swift */; };
+		BF000001000000000000000C /* MediaImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000100C /* MediaImportService.swift */; };
+		BF000001000000000000000D /* MediaRelinkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000100D /* MediaRelinkService.swift */; };
+		BF000001000000000000000E /* WaveformAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000100E /* WaveformAnalysisService.swift */; };
+		BF000001000000000000000F /* AudioPlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000100F /* AudioPlaybackEngine.swift */; };
+		BF0000010000000000000010 /* TimelineRenderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001010 /* TimelineRenderService.swift */; };
+		BF0000010000000000000011 /* ExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001011 /* ExportService.swift */; };
+		BF0000010000000000000012 /* MediaBinViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001012 /* MediaBinViewController.swift */; };
+		BF0000010000000000000013 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001013 /* TimelineView.swift */; };
+		BF0000010000000000000014 /* InspectorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001014 /* InspectorViewController.swift */; };
+		BF0000010000000000000015 /* ExportPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001015 /* ExportPanelController.swift */; };
+		BF0000010000000000000016 /* MissingMediaDialogController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001016 /* MissingMediaDialogController.swift */; };
+		BF0000010000000000000017 /* RecoveryPromptController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001017 /* RecoveryPromptController.swift */; };
+		BF0000010000000000000018 /* TrackHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001018 /* TrackHeaderView.swift */; };
+		BF0000010000000000000019 /* ClipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001019 /* ClipView.swift */; };
+		BF000001000000000000001A /* Timecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000101A /* Timecode.swift */; };
+		BF000001000000000000001B /* AudioFormatHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000101B /* AudioFormatHelpers.swift */; };
+		BF000001000000000000001C /* FileMetadataHasher.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000101C /* FileMetadataHasher.swift */; };
+		BF000001000000000000001D /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000101D /* main.swift */; };
+		BF000001000000000000001E /* ExportProgressController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000101E /* ExportProgressController.swift */; };
+		BF000001000000000000001F /* WaveformData.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000101F /* WaveformData.swift */; };
+		BF0000010000000000000020 /* WaveformCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001020 /* WaveformCacheService.swift */; };
+		BF0000010000000000000021 /* MediaProxyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001021 /* MediaProxyService.swift */; };
+		BF0000010000000000000022 /* ExternalEncoderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001022 /* ExternalEncoderSettings.swift */; };
+		BF0000010000000000000023 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001023 /* PreferencesWindowController.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		BF0000010000000000002000 /* LightAudio Editor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LightAudio Editor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		BF0000010000000000001000 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
+		BF0000010000000000001001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/AppDelegate.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001002 /* MainWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/MainWindowController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001003 /* ProjectController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/ProjectController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001004 /* CrashRecoveryController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/CrashRecoveryController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001005 /* Project.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/Project.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001006 /* MediaAsset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/MediaAsset.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001007 /* Timeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/Timeline.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001008 /* ExportSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/ExportSettings.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001009 /* FileReferenceResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/FileReferenceResolver.swift"; sourceTree = "<group>"; };
+		BF000001000000000000100A /* ProjectFileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ProjectFileService.swift"; sourceTree = "<group>"; };
+		BF000001000000000000100B /* AutosaveRecoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/AutosaveRecoveryService.swift"; sourceTree = "<group>"; };
+		BF000001000000000000100C /* MediaImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MediaImportService.swift"; sourceTree = "<group>"; };
+		BF000001000000000000100D /* MediaRelinkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MediaRelinkService.swift"; sourceTree = "<group>"; };
+		BF000001000000000000100E /* WaveformAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/WaveformAnalysisService.swift"; sourceTree = "<group>"; };
+		BF000001000000000000100F /* AudioPlaybackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/AudioPlaybackEngine.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001010 /* TimelineRenderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/TimelineRenderService.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001011 /* ExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ExportService.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001012 /* MediaBinViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/MediaBinViewController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001013 /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/TimelineView.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001014 /* InspectorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/InspectorViewController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001015 /* ExportPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/ExportPanelController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001016 /* MissingMediaDialogController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/MissingMediaDialogController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001017 /* RecoveryPromptController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/RecoveryPromptController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001018 /* TrackHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/TrackHeaderView.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001019 /* ClipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/ClipView.swift"; sourceTree = "<group>"; };
+		BF000001000000000000101A /* Timecode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Utilities/Timecode.swift"; sourceTree = "<group>"; };
+		BF000001000000000000101B /* AudioFormatHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Utilities/AudioFormatHelpers.swift"; sourceTree = "<group>"; };
+		BF000001000000000000101C /* FileMetadataHasher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Utilities/FileMetadataHasher.swift"; sourceTree = "<group>"; };
+		BF000001000000000000101D /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/main.swift"; sourceTree = "<group>"; };
+		BF000001000000000000101E /* ExportProgressController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/ExportProgressController.swift"; sourceTree = "<group>"; };
+		BF000001000000000000101F /* WaveformData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models/WaveformData.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001020 /* WaveformCacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/WaveformCacheService.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001021 /* MediaProxyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MediaProxyService.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001022 /* ExternalEncoderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ExternalEncoderSettings.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001023 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/PreferencesWindowController.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BF0000010000000000003001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		BF0000010000000000004000 = {
+			isa = PBXGroup;
+			children = (
+				BF0000010000000000005000 /* LightAudio Editor */,
+				BF0000010000000000004001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		BF0000010000000000004001 /* Products */ = {isa = PBXGroup; children = (BF0000010000000000002000 /* LightAudio Editor.app */); name = Products; sourceTree = "<group>"; };
+		BF0000010000000000005000 /* LightAudio Editor */ = {
+			isa = PBXGroup;
+			children = (
+				BF0000010000000000001000 /* Info.plist */,
+				BF0000010000000000001001 /* AppDelegate.swift */,
+				BF0000010000000000001002 /* MainWindowController.swift */,
+				BF0000010000000000001003 /* ProjectController.swift */,
+				BF0000010000000000001004 /* CrashRecoveryController.swift */,
+				BF0000010000000000001005 /* Project.swift */,
+				BF0000010000000000001006 /* MediaAsset.swift */,
+				BF0000010000000000001007 /* Timeline.swift */,
+				BF0000010000000000001008 /* ExportSettings.swift */,
+				BF0000010000000000001009 /* FileReferenceResolver.swift */,
+				BF000001000000000000100A /* ProjectFileService.swift */,
+				BF000001000000000000100B /* AutosaveRecoveryService.swift */,
+				BF000001000000000000100C /* MediaImportService.swift */,
+				BF000001000000000000100D /* MediaRelinkService.swift */,
+				BF000001000000000000100E /* WaveformAnalysisService.swift */,
+				BF000001000000000000100F /* AudioPlaybackEngine.swift */,
+				BF0000010000000000001010 /* TimelineRenderService.swift */,
+				BF0000010000000000001011 /* ExportService.swift */,
+				BF0000010000000000001012 /* MediaBinViewController.swift */,
+				BF0000010000000000001013 /* TimelineView.swift */,
+				BF0000010000000000001014 /* InspectorViewController.swift */,
+				BF0000010000000000001015 /* ExportPanelController.swift */,
+				BF0000010000000000001016 /* MissingMediaDialogController.swift */,
+				BF0000010000000000001017 /* RecoveryPromptController.swift */,
+				BF0000010000000000001018 /* TrackHeaderView.swift */,
+				BF0000010000000000001019 /* ClipView.swift */,
+				BF000001000000000000101A /* Timecode.swift */,
+				BF000001000000000000101B /* AudioFormatHelpers.swift */,
+				BF000001000000000000101C /* FileMetadataHasher.swift */,
+				BF000001000000000000101D /* main.swift */,
+				BF000001000000000000101E /* ExportProgressController.swift */,
+				BF000001000000000000101F /* WaveformData.swift */,
+				BF0000010000000000001020 /* WaveformCacheService.swift */,
+				BF0000010000000000001021 /* MediaProxyService.swift */,
+				BF0000010000000000001022 /* ExternalEncoderSettings.swift */,
+				BF0000010000000000001023 /* PreferencesWindowController.swift */,
+			);
+			path = "LightAudio Editor";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		BF0000010000000000006000 /* LightAudio Editor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BF0000010000000000008001 /* Build configuration list for PBXNativeTarget "LightAudio Editor" */;
+			buildPhases = (
+				BF0000010000000000003002 /* Sources */,
+				BF0000010000000000003001 /* Frameworks */,
+				BF0000010000000000003003 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = "LightAudio Editor";
+			productName = "LightAudio Editor";
+			productReference = BF0000010000000000002000 /* LightAudio Editor.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		BF0000010000000000007000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1540;
+				LastUpgradeCheck = 1540;
+			};
+			buildConfigurationList = BF0000010000000000008000 /* Build configuration list for PBXProject "LightAudio Editor" */;
+			compatibilityVersion = "Xcode 12.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = BF0000010000000000004000;
+			productRefGroup = BF0000010000000000004001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (BF0000010000000000006000 /* LightAudio Editor */);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BF0000010000000000003003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		BF0000010000000000003002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000010000000000000001 /* AppDelegate.swift in Sources */,
+				BF0000010000000000000002 /* MainWindowController.swift in Sources */,
+				BF0000010000000000000003 /* ProjectController.swift in Sources */,
+				BF0000010000000000000004 /* CrashRecoveryController.swift in Sources */,
+				BF0000010000000000000005 /* Project.swift in Sources */,
+				BF0000010000000000000006 /* MediaAsset.swift in Sources */,
+				BF0000010000000000000007 /* Timeline.swift in Sources */,
+				BF0000010000000000000008 /* ExportSettings.swift in Sources */,
+				BF0000010000000000000009 /* FileReferenceResolver.swift in Sources */,
+				BF000001000000000000000A /* ProjectFileService.swift in Sources */,
+				BF000001000000000000000B /* AutosaveRecoveryService.swift in Sources */,
+				BF000001000000000000000C /* MediaImportService.swift in Sources */,
+				BF000001000000000000000D /* MediaRelinkService.swift in Sources */,
+				BF000001000000000000000E /* WaveformAnalysisService.swift in Sources */,
+				BF000001000000000000000F /* AudioPlaybackEngine.swift in Sources */,
+				BF0000010000000000000010 /* TimelineRenderService.swift in Sources */,
+				BF0000010000000000000011 /* ExportService.swift in Sources */,
+				BF0000010000000000000012 /* MediaBinViewController.swift in Sources */,
+				BF0000010000000000000013 /* TimelineView.swift in Sources */,
+				BF0000010000000000000014 /* InspectorViewController.swift in Sources */,
+				BF0000010000000000000015 /* ExportPanelController.swift in Sources */,
+				BF0000010000000000000016 /* MissingMediaDialogController.swift in Sources */,
+				BF0000010000000000000017 /* RecoveryPromptController.swift in Sources */,
+				BF0000010000000000000018 /* TrackHeaderView.swift in Sources */,
+				BF0000010000000000000019 /* ClipView.swift in Sources */,
+				BF000001000000000000001A /* Timecode.swift in Sources */,
+				BF000001000000000000001B /* AudioFormatHelpers.swift in Sources */,
+				BF000001000000000000001C /* FileMetadataHasher.swift in Sources */,
+				BF000001000000000000001D /* main.swift in Sources */,
+				BF000001000000000000001E /* ExportProgressController.swift in Sources */,
+				BF000001000000000000001F /* WaveformData.swift in Sources */,
+				BF0000010000000000000020 /* WaveformCacheService.swift in Sources */,
+				BF0000010000000000000021 /* MediaProxyService.swift in Sources */,
+				BF0000010000000000000022 /* ExternalEncoderSettings.swift in Sources */,
+				BF0000010000000000000023 /* PreferencesWindowController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		BF0000010000000000009000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				INFOPLIST_FILE = "LightAudio Editor/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				PRODUCT_BUNDLE_IDENTIFIER = com.local.LightAudioEditor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		BF0000010000000000009001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				INFOPLIST_FILE = "LightAudio Editor/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				PRODUCT_BUNDLE_IDENTIFIER = com.local.LightAudioEditor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		BF0000010000000000009002 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic;}; name = Debug; };
+		BF0000010000000000009003 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic;}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		BF0000010000000000008000 /* Build configuration list for PBXProject "LightAudio Editor" */ = {isa = XCConfigurationList; buildConfigurations = (BF0000010000000000009002 /* Debug */, BF0000010000000000009003 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		BF0000010000000000008001 /* Build configuration list for PBXNativeTarget "LightAudio Editor" */ = {isa = XCConfigurationList; buildConfigurations = (BF0000010000000000009000 /* Debug */, BF0000010000000000009001 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+/* End XCConfigurationList section */
+	};
+	rootObject = BF0000010000000000007000 /* Project object */;
+}

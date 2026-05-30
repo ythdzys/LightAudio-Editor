@@ -1,0 +1,85 @@
+# LightAudio Editor
+
+LightAudio Editor is a native macOS/AppKit MVP for lightweight multitrack audio editing.
+
+Implemented in this first pass:
+
+- `.liau` JSON project save/open/save-as
+- Audio/video-file import metadata, with video treated as audio-only media
+- MP4/MOV/M4V video imports generate reusable audio-only proxy files outside `.liau` projects
+- Media bin with missing-media state
+- Compact default window layout with a View > Reset Window Layout command
+- Timeline clip placement, selection, move, trim, split, delete, and gain
+- Multi-selection, marquee selection, group move/nudge/delete/duplicate, and batch inspector edits
+- Responsive Selected Clip inspector with chunked Identity, Level & Pan, Fades, Automation, Processing, and Selection Summary sections
+- Clipboard editing for selected timeline clips with copy, cut, and paste at playhead
+- Timeline markers saved in `.liau` projects, with marker add/rename/delete and ruler navigation
+- Timeline In/Out points with visual range shading, saved in `.liau` projects
+- Loop Range playback toggle for looping the current In/Out range
+- Drag media from the media bin directly onto timeline tracks
+- Dragging media below existing tracks automatically creates the intended new track and places the clip there
+- Multiple tracks with add-track, mute, solo, lock, rename, and vertical clip moves
+- Track height controls from the View menu, plus compact collapse/expand per track
+- Track reordering by dragging track headers, preserving clips and mix settings
+- Track header context menu actions for add above/below, duplicate, delete, collapse/expand, mute, solo, lock, rename, and reset height
+- Track rename by double-clicking the track name only, or from the track header context menu
+- Compact track header mix controls for track volume and pan, saved in `.liau` projects
+- Per-track output meters in the timeline header
+- Clip duplication and fade in/out editing from the inspector
+- Fade-in and fade-out curve choices: Linear, Equal Power, Ease In, and Ease Out
+- Timeline fade handles on clip edges for direct fade-duration editing, including double-click reset
+- Batch fade commands for selected clips: Apply Fade In, Apply Fade Out, and Remove Fades
+- Numeric gain/fade fields with live slider synchronization
+- Clip gain editing in dB, plus clip pan editing with exact numeric entry, playback pan, and export pan
+- Timeline clip overlays for gain, pan, and fade guides
+- Professional trim-edge hover and drag feedback with native resize cursor, on-clip trim handles, ghost edge preview, and time/duration tooltip
+- Timeline zoom controls and export progress/cancel sheet
+- Timeline navigation commands for project start/end, previous/next marker, and previous/next clip edge
+- Snapping toggle with snapping to grid, playhead, markers, and clip edges
+- Smooth playback playhead updates with editable `HH:MM:SS.mmm` seeking, including seek-and-continue while playing
+- Follow-playhead toggle that keeps the timeline view near the playhead during playback
+- Dirty-state window title and save prompts before closing or opening another project
+- Timeline, track header, and media bin context menus for common editing actions
+- Option-drag duplication for selected clips, preserving relative timing and track placement
+- Ripple delete for selected clips from the timeline context menu or Edit menu
+- Circular toolbar buttons with larger click targets for transport, zoom, import, save, and export controls
+- Arrow-key clip nudging for selected clips
+- Asynchronous real waveform analysis with persistent cache files outside `.liau` projects
+- Higher-density timeline waveform rendering that follows clip trim ranges, aggregates only the visible region, and uses stronger visual normalization
+- Higher-density waveform analysis for normal audio and video-origin proxy audio, with versioned cache invalidation
+- Wider timeline zoom-out range plus View > Zoom to Fit Project for long edits
+- Media bin waveform status for pending, generating, ready, failed, and missing assets
+- Media bin search, filtering, and persistent sorting by name, duration, media type, status, import date, and used/unused state
+- Project-level media renaming, usage-count display, and safe removal of unused media without touching source files
+- Finder drag-and-drop import directly into the media bin, including over existing items and supported folders
+- Media bin right-click actions for import, add to timeline, rename media, reveal, relink, regenerate waveform/proxy, remove unused media, and media info
+- Media info sheet with display/original names, source/resolved paths, media type, duration, sample rate, channel count, size, import date, usage count, waveform state, and proxy state
+- Clip custom names and color labels, editable from the inspector or timeline context menu and saved in `.liau`
+- Clip volume automation keyframes, with envelope drawing, double-click add, drag editing, Delete-key removal, and `.liau` persistence
+- Clip volume automation is applied during playback, metering, full-project export, and In/Out range export
+- Inspector and clip context menu actions for adding volume keyframes, clearing clip volume automation, and non-destructive Normalize Clip analysis
+- Normalize Clip analyzes the visible trimmed audio region and updates clip gain without modifying source media
+- Explicit crossfades for overlapping clips on the same track, with Linear and Equal Power curves
+- Crossfade overlays on the timeline, plus context/menu commands to create, change curve, and remove crossfades
+- Preferences checkbox for optional automatic crossfade creation when clip moves/trims create overlaps
+- Overlapping clips without an explicit crossfade continue to mix normally
+- Project format compatibility for future pan/track automation and built-in clip effect models; EQ is modeled as a future built-in effect but has no active processing UI yet
+- Project menu cleanup tools for relinking missing media, locating folders, removing unused media, regenerating waveforms, retrying failed waveforms, and regenerating video proxies
+- File > Collect Project Media creates a portable collected folder with a copied `.liau` project and `Media/` sources
+- Playback of active, non-missing clips with track mute/solo handling, trim-aware scheduling, gain, pan, audible fade curves, and crossfades
+- Master volume, master output meter, and resettable clipping indicator in the bottom status area
+- Lightweight bottom status area for import, save, export, playback, relinking, locked-track, clipping, and blocked-operation feedback
+- WAV/AIFF native export backend with an export abstraction for future FFmpeg support
+- Export panel support for WAV, AIFF, M4A/AAC, MP3, and FLAC, with optional FFmpeg-backed compressed export
+- Export can render either the entire project or the current In/Out range
+- Export rendering applies clip, track, master mix controls, fade curves, crossfades, and warns when clipping is detected
+- Disabled normalize-on-export option is visible in the export panel as a future backend hook
+- Preferences panel for configuring and testing an external FFmpeg encoder
+- Autosave recovery snapshots stored outside the saved project file
+- Recovery prompt only after an unexpected shutdown for a dirty saved project with a newer unconsumed snapshot
+- Missing-media warning, single-file relink, folder locate, and duration-based verification
+- Projects with missing media open for relinking, but timeline editing, playback, and export are blocked until all media is online
+- Undo/redo registration for editing operations
+- Expanded undo/redo coverage for group edits, markers, clipboard edits, snapping, and track operations
+
+Open `LightAudio Editor.xcodeproj` in Xcode and build the `LightAudio Editor` target.
