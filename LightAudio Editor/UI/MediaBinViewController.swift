@@ -28,6 +28,7 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
     var onRenameAsset: ((UUID) -> Void)?
     var onRegenerateWaveform: ((UUID) -> Void)?
     var onRegenerateProxy: ((UUID) -> Void)?
+    var onCancelProxyGeneration: ((UUID) -> Void)?
     var onRemoveAsset: ((UUID) -> Void)?
     var onShowInfo: ((UUID) -> Void)?
 
@@ -267,6 +268,10 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
             let proxy = targetedItem(title: "Regenerate Audio Proxy", action: #selector(regenerateProxySelected))
             proxy.isEnabled = !asset.isMissing
             menu.addItem(proxy)
+
+            if asset.proxyStatus == .generating {
+                menu.addItem(targetedItem(title: "Cancel Audio Proxy Generation", action: #selector(cancelProxyGenerationSelected)))
+            }
         }
 
         menu.addItem(NSMenuItem.separator())
@@ -315,6 +320,11 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
     @objc private func regenerateProxySelected() {
         guard let asset = selectedAsset else { return }
         onRegenerateProxy?(asset.id)
+    }
+
+    @objc private func cancelProxyGenerationSelected() {
+        guard let asset = selectedAsset else { return }
+        onCancelProxyGeneration?(asset.id)
     }
 
     @objc private func removeSelected() {

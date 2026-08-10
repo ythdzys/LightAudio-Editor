@@ -66,13 +66,92 @@ struct ExportSettings: Codable {
     var bitrate: Int?
     var outputURL: URL
     var range: ExportRange
+    /// Output replacement must be explicitly approved by the caller.
+    var overwriteExisting: Bool
 
-    init(format: ExportFormat, sampleRate: Double, channelCount: Int, bitrate: Int?, outputURL: URL, range: ExportRange = .entireProject) {
+    init(
+        format: ExportFormat,
+        sampleRate: Double,
+        channelCount: Int,
+        bitrate: Int?,
+        outputURL: URL,
+        range: ExportRange = .entireProject,
+        overwriteExisting: Bool = false
+    ) {
         self.format = format
         self.sampleRate = sampleRate
         self.channelCount = channelCount
         self.bitrate = bitrate
         self.outputURL = outputURL
         self.range = range
+        self.overwriteExisting = overwriteExisting
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case format
+        case sampleRate
+        case channelCount
+        case bitrate
+        case outputURL
+        case range
+        case overwriteExisting
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        format = try container.decode(ExportFormat.self, forKey: .format)
+        sampleRate = try container.decode(Double.self, forKey: .sampleRate)
+        channelCount = try container.decode(Int.self, forKey: .channelCount)
+        bitrate = try container.decodeIfPresent(Int.self, forKey: .bitrate)
+        outputURL = try container.decode(URL.self, forKey: .outputURL)
+        range = try container.decodeIfPresent(ExportRange.self, forKey: .range) ?? .entireProject
+        overwriteExisting = try container.decodeIfPresent(Bool.self, forKey: .overwriteExisting) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(format, forKey: .format)
+        try container.encode(sampleRate, forKey: .sampleRate)
+        try container.encode(channelCount, forKey: .channelCount)
+        try container.encodeIfPresent(bitrate, forKey: .bitrate)
+        try container.encode(outputURL, forKey: .outputURL)
+        try container.encode(range, forKey: .range)
+        try container.encode(overwriteExisting, forKey: .overwriteExisting)
+    }
+
+    func validate() throws {
+        guard sampleRate.isFinite, sampleRate >= 8_000, sampleRate <= 384_000 else {
+            throw ExportSettingsValidationError("Choose a valid output sample rate.")
+        }
+        guard (1...2).contains(channelCount) else {
+            throw ExportSettingsValidationError("Choose mono or stereo output.")
+        }
+        guard outputURL.isFileURL,
+              !outputURL.path.isEmpty,
+              !outputURL.hasDirectoryPath else {
+            throw ExportSettingsValidationError("Choose a valid output file.")
+        }
+        if let bitrate {
+            guard (8...512).contains(bitrate) else {
+                throw ExportSettingsValidationError("Choose a valid audio bitrate.")
+            }
+        }
+        if case .timeRange(let start, let end) = range {
+            guard start.isFinite, end.isFinite, start >= 0, end > start else {
+                throw ExportSettingsValidationError("The selected export range is invalid.")
+            }
+        }
+    }
+}
+
+private struct ExportSettingsValidationError: LocalizedError {
+    let message: String
+
+    init(_ message: String) {
+        self.message = message
+    }
+
+    var errorDescription: String? {
+        message
     }
 }

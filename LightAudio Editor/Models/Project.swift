@@ -98,6 +98,7 @@ struct MixState: Codable {
 struct ProjectRecoverySnapshot: Codable {
     var id: UUID = UUID()
     var createdAt: Date
+    var sessionID: UUID?
     var originalProjectURL: URL?
     var project: Project
     var wasDirty: Bool = true
@@ -106,15 +107,17 @@ struct ProjectRecoverySnapshot: Codable {
     enum CodingKeys: String, CodingKey {
         case id
         case createdAt
+        case sessionID
         case originalProjectURL
         case project
         case wasDirty
         case savedProjectModificationDate
     }
 
-    init(id: UUID = UUID(), createdAt: Date, originalProjectURL: URL?, project: Project, wasDirty: Bool = true, savedProjectModificationDate: Date? = nil) {
+    init(id: UUID = UUID(), createdAt: Date, sessionID: UUID? = nil, originalProjectURL: URL?, project: Project, wasDirty: Bool = true, savedProjectModificationDate: Date? = nil) {
         self.id = id
         self.createdAt = createdAt
+        self.sessionID = sessionID
         self.originalProjectURL = originalProjectURL
         self.project = project
         self.wasDirty = wasDirty
@@ -125,6 +128,7 @@ struct ProjectRecoverySnapshot: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         createdAt = try container.decode(Date.self, forKey: .createdAt)
+        sessionID = try container.decodeIfPresent(UUID.self, forKey: .sessionID)
         originalProjectURL = try container.decodeIfPresent(URL.self, forKey: .originalProjectURL)
         project = try container.decode(Project.self, forKey: .project)
         wasDirty = try container.decodeIfPresent(Bool.self, forKey: .wasDirty) ?? true
@@ -133,11 +137,16 @@ struct ProjectRecoverySnapshot: Codable {
 }
 
 struct TimelineViewState: Codable {
+    static let defaultZoom: Double = 80
+    static let minimumZoom: Double = 0.02
+    static let maximumZoom: Double = 2400
+    static let maximumHorizontalScroll: Double = 8_000_000
+    static let maximumTimelineTime: TimeInterval = 8_000_000
     static let defaultTrackHeight: Double = 86
     static let minimumTrackHeight: Double = 72
     static let maximumTrackHeight: Double = 150
 
-    var zoom: Double = 80
+    var zoom: Double = TimelineViewState.defaultZoom
     var horizontalScroll: Double = 0
     var snappingEnabled: Bool = true
     var followPlayhead: Bool = false
@@ -158,7 +167,7 @@ struct TimelineViewState: Codable {
     }
 
     init(
-        zoom: Double = 80,
+        zoom: Double = TimelineViewState.defaultZoom,
         horizontalScroll: Double = 0,
         snappingEnabled: Bool = true,
         followPlayhead: Bool = false,
@@ -167,30 +176,46 @@ struct TimelineViewState: Codable {
         loopRangeEnabled: Bool = false,
         trackHeight: Double = TimelineViewState.defaultTrackHeight
     ) {
-        self.zoom = zoom
-        self.horizontalScroll = horizontalScroll
+        self.zoom = TimelineViewState.clampedZoom(zoom)
+        self.horizontalScroll = TimelineViewState.clampedHorizontalScroll(horizontalScroll)
         self.snappingEnabled = snappingEnabled
         self.followPlayhead = followPlayhead
-        self.inPoint = inPoint
-        self.outPoint = outPoint
+        self.inPoint = TimelineViewState.clampedTimelineTime(inPoint)
+        self.outPoint = TimelineViewState.clampedTimelineTime(outPoint)
         self.loopRangeEnabled = loopRangeEnabled
         self.trackHeight = TimelineViewState.clampedTrackHeight(trackHeight)
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        zoom = try container.decodeIfPresent(Double.self, forKey: .zoom) ?? 80
-        horizontalScroll = try container.decodeIfPresent(Double.self, forKey: .horizontalScroll) ?? 0
+        zoom = TimelineViewState.clampedZoom(try container.decodeIfPresent(Double.self, forKey: .zoom) ?? TimelineViewState.defaultZoom)
+        horizontalScroll = TimelineViewState.clampedHorizontalScroll(try container.decodeIfPresent(Double.self, forKey: .horizontalScroll) ?? 0)
         snappingEnabled = try container.decodeIfPresent(Bool.self, forKey: .snappingEnabled) ?? true
         followPlayhead = try container.decodeIfPresent(Bool.self, forKey: .followPlayhead) ?? false
-        inPoint = try container.decodeIfPresent(TimeInterval.self, forKey: .inPoint)
-        outPoint = try container.decodeIfPresent(TimeInterval.self, forKey: .outPoint)
+        inPoint = TimelineViewState.clampedTimelineTime(try container.decodeIfPresent(TimeInterval.self, forKey: .inPoint))
+        outPoint = TimelineViewState.clampedTimelineTime(try container.decodeIfPresent(TimeInterval.self, forKey: .outPoint))
         loopRangeEnabled = try container.decodeIfPresent(Bool.self, forKey: .loopRangeEnabled) ?? false
         trackHeight = TimelineViewState.clampedTrackHeight(try container.decodeIfPresent(Double.self, forKey: .trackHeight) ?? TimelineViewState.defaultTrackHeight)
     }
 
     static func clampedTrackHeight(_ value: Double) -> Double {
-        min(maximumTrackHeight, max(minimumTrackHeight, value))
+        guard value.isFinite else { return defaultTrackHeight }
+        return min(maximumTrackHeight, max(minimumTrackHeight, value))
+    }
+
+    static func clampedZoom(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultZoom }
+        return min(maximumZoom, max(minimumZoom, value))
+    }
+
+    static func clampedHorizontalScroll(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        return min(maximumHorizontalScroll, max(0, value))
+    }
+
+    static func clampedTimelineTime(_ value: TimeInterval?) -> TimeInterval? {
+        guard let value, value.isFinite else { return nil }
+        return min(maximumTimelineTime, max(0, value))
     }
 
     var validRange: (start: TimeInterval, end: TimeInterval)? {

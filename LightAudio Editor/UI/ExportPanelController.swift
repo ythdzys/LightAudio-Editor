@@ -15,6 +15,7 @@ final class ExportPanelController: NSWindowController {
     private let availabilityLabel = NSTextField(labelWithString: "")
     private let exportButton = NSButton(title: "Export", target: nil, action: nil)
     private var outputURL: URL?
+    private var availabilityRequestID = UUID()
 
     static func show(window: NSWindow?, project: Project, completion: @escaping (ExportSettings) -> Void) {
         let controller = ExportPanelController(project: project, completion: completion)
@@ -129,7 +130,31 @@ final class ExportPanelController: NSWindowController {
         let format = selectedFormat()
         let compressed = format == .m4a || format == .mp3
         bitratePopup.isHidden = !compressed
-        let availability = ExternalEncoderExportBackend.availability(for: format)
+
+        let requestID = UUID()
+        availabilityRequestID = requestID
+        switch format {
+        case .wav, .aiff:
+            applyAvailability(ExternalEncoderExportBackend.availability(for: format))
+        case .m4a, .mp3, .flac:
+            availabilityLabel.stringValue = "Checking FFmpeg..."
+            availabilityLabel.textColor = .secondaryLabelColor
+            exportButton.isEnabled = false
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let availability = ExternalEncoderExportBackend.availability(for: format)
+                DispatchQueue.main.async {
+                    guard let self,
+                          self.availabilityRequestID == requestID,
+                          self.selectedFormat() == format else {
+                        return
+                    }
+                    self.applyAvailability(availability)
+                }
+            }
+        }
+    }
+
+    private func applyAvailability(_ availability: (available: Bool, reason: String?)) {
         exportButton.isEnabled = availability.available && outputURL != nil
         availabilityLabel.stringValue = availability.reason ?? "Available"
         availabilityLabel.textColor = availability.available ? .secondaryLabelColor : .systemRed
@@ -155,13 +180,36 @@ final class ExportPanelController: NSWindowController {
 
     @objc private func export() {
         guard let outputURL = outputURL else { return }
+        if FileManager.default.fileExists(atPath: outputURL.path) {
+            confirmOverwrite(of: outputURL)
+            return
+        }
+        finishExport(to: outputURL, overwritingExisting: false)
+    }
+
+    private func confirmOverwrite(of outputURL: URL) {
+        guard let window = window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Replace existing export?"
+        alert.informativeText = "\(outputURL.lastPathComponent) already exists. Replacing it cannot be undone."
+        alert.addButton(withTitle: "Replace")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.finishExport(to: outputURL, overwritingExisting: true)
+        }
+    }
+
+    private func finishExport(to outputURL: URL, overwritingExisting: Bool) {
         let settings = ExportSettings(
             format: selectedFormat(),
             sampleRate: selectedSampleRate(),
             channelCount: selectedChannelCount(),
             bitrate: selectedBitrate(),
             outputURL: outputURL,
-            range: selectedRange()
+            range: selectedRange(),
+            overwriteExisting: overwritingExisting
         )
         guard let window = window else { return }
         window.sheetParent?.endSheet(window)

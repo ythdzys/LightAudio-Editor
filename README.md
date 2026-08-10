@@ -18,6 +18,7 @@ Implemented in this first pass:
 - Loop Range playback toggle for looping the current In/Out range
 - Drag media from the media bin directly onto timeline tracks
 - Dragging media below existing tracks automatically creates the intended new track and places the clip there
+- Dragging media onto an A1/A2 track header targets that track at the current playhead; dropping lower in the header column creates the needed tracks
 - Multiple tracks with add-track, mute, solo, lock, rename, and vertical clip moves
 - Track height controls from the View menu, plus compact collapse/expand per track
 - Track reordering by dragging track headers, preserving clips and mix settings
@@ -34,6 +35,7 @@ Implemented in this first pass:
 - Timeline clip overlays for gain, pan, and fade guides
 - Professional trim-edge hover and drag feedback with native resize cursor, on-clip trim handles, ghost edge preview, and time/duration tooltip
 - Timeline zoom controls and export progress/cancel sheet
+- Smooth continuous trackpad pinch zoom, anchored under the pointer, with a much wider zoom-in and zoom-out range
 - Timeline navigation commands for project start/end, previous/next marker, and previous/next clip edge
 - Snapping toggle with snapping to grid, playhead, markers, and clip edges
 - Smooth playback playhead updates with editable `HH:MM:SS.mmm` seeking, including seek-and-continue while playing
@@ -75,6 +77,7 @@ Implemented in this first pass:
 - Export rendering applies clip, track, master mix controls, fade curves, crossfades, and warns when clipping is detected
 - Disabled normalize-on-export option is visible in the export panel as a future backend hook
 - Preferences panel for configuring and testing an external FFmpeg encoder
+- Preferences can clear all app-generated caches: waveforms, video-proxy audio, and recovery snapshots; `.liau` projects and original media are never removed
 - Autosave recovery snapshots stored outside the saved project file
 - Recovery prompt only after an unexpected shutdown for a dirty saved project with a newer unconsumed snapshot
 - Missing-media warning, single-file relink, folder locate, and duration-based verification

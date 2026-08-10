@@ -9,8 +9,12 @@ final class TimelineView: NSView {
     var waveforms: [UUID: WaveformData] = [:] { didSet { needsDisplay = true } }
     var selectedClipIDs: Set<UUID> = [] { didSet { needsDisplay = true } }
     var selectedClipID: UUID? { didSet { needsDisplay = true } }
-    var playheadTime: TimeInterval = 0 { didSet { needsDisplay = true } }
-    var trackLevels: [UUID: Double] = [:] { didSet { needsDisplay = true } }
+    var playheadTime: TimeInterval = 0 {
+        didSet { invalidatePlayhead(from: oldValue, to: playheadTime) }
+    }
+    var trackLevels: [UUID: Double] = [:] {
+        didSet { invalidateVisibleTrackHeaders() }
+    }
     var tool: TimelineTool = .selection
 
     var onSelectClip: ((UUID?) -> Void)?
@@ -35,6 +39,7 @@ final class TimelineView: NSView {
     var onResetTrackHeight: (() -> Void)?
     var onReorderTrack: ((UUID, Int) -> Void)?
     var onDropAsset: ((UUID, TimeInterval, Int) -> Void)?
+    var onPinchZoom: ((Double, TimeInterval, CGFloat) -> Void)?
     var onAddMarker: (() -> Void)?
     var onDeleteMarker: ((UUID) -> Void)?
     var onRenameMarker: ((UUID) -> Void)?
@@ -58,6 +63,8 @@ final class TimelineView: NSView {
     var onDeleteTrack: ((UUID) -> Void)?
     var onRippleDelete: (() -> Void)?
     var onStatusMessage: ((String) -> Void)?
+    var onBeginContinuousEdit: ((String) -> Void)?
+    var onEndContinuousEdit: (() -> Void)?
 
     private let rulerHeight: CGFloat = 28
     private let collapsedTrackHeight: CGFloat = 36
@@ -77,11 +84,27 @@ final class TimelineView: NSView {
     private var hoverTrimEdge: TrimEdgeHover?
     private var trimDragPreview: TrimDragPreview?
     private var timelineTrackingArea: NSTrackingArea?
+    private var pinchZoomState: PinchZoomState?
+    private var isContinuousEditActive = false
+    private weak var observedScrollClipView: NSClipView?
+    private var scrollBoundsObserver: NSObjectProtocol?
 
     private struct DragState {
         var clipID: UUID
         var offset: CGFloat
         var edge: TrimEdge?
+    }
+
+    private func beginContinuousEdit(_ actionName: String) {
+        guard !isContinuousEditActive else { return }
+        isContinuousEditActive = true
+        onBeginContinuousEdit?(actionName)
+    }
+
+    private func endContinuousEdit() {
+        guard isContinuousEditActive else { return }
+        isContinuousEditActive = false
+        onEndContinuousEdit?()
     }
 
     private struct TrackMixDrag {
@@ -101,6 +124,13 @@ final class TimelineView: NSView {
         var trackIndex: Int
         var allowed: Bool
         var clamped: Bool
+        var isHeaderDrop: Bool
+    }
+
+    private struct PinchZoomState {
+        let initialZoom: Double
+        let anchorTime: TimeInterval
+        let anchorViewportX: CGFloat
     }
 
     private struct TrackReorderDrag {
@@ -140,18 +170,47 @@ final class TimelineView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         registerForDraggedTypes([mediaAssetPasteboardType])
+        installMagnificationGesture()
         window?.acceptsMouseMovedEvents = true
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         registerForDraggedTypes([mediaAssetPasteboardType])
+        installMagnificationGesture()
         window?.acceptsMouseMovedEvents = true
+    }
+
+    private func installMagnificationGesture() {
+        addGestureRecognizer(NSMagnificationGestureRecognizer(target: self, action: #selector(handleMagnification(_:))))
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.acceptsMouseMovedEvents = true
+        observeScrollBounds()
+    }
+
+    deinit {
+        if let scrollBoundsObserver {
+            NotificationCenter.default.removeObserver(scrollBoundsObserver)
+        }
+    }
+
+    private func observeScrollBounds() {
+        guard let clipView = enclosingScrollView?.contentView, observedScrollClipView !== clipView else { return }
+        if let scrollBoundsObserver {
+            NotificationCenter.default.removeObserver(scrollBoundsObserver)
+        }
+        observedScrollClipView = clipView
+        clipView.postsBoundsChangedNotifications = true
+        scrollBoundsObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clipView,
+            queue: .main
+        ) { [weak self] _ in
+            self?.needsDisplay = true
+        }
     }
 
     override func updateTrackingAreas() {
@@ -166,7 +225,7 @@ final class TimelineView: NSView {
     }
 
     var secondsPerPoint: Double {
-        1.0 / max(0.25, project.viewState.zoom)
+        1.0 / TimelineViewState.clampedZoom(project.viewState.zoom)
     }
 
     private var expandedTrackHeight: CGFloat {
@@ -175,6 +234,18 @@ final class TimelineView: NSView {
 
     private func height(for track: Track) -> CGFloat {
         track.isCollapsed ? collapsedTrackHeight : expandedTrackHeight
+    }
+
+    private var stickyHeaderX: CGFloat {
+        max(0, visibleRect.minX)
+    }
+
+    private var stickyHeaderMaxX: CGFloat {
+        stickyHeaderX + trackHeaderWidth
+    }
+
+    private func isPointInStickyHeader(_ point: NSPoint) -> Bool {
+        point.x >= stickyHeaderX && point.x < stickyHeaderMaxX
     }
 
     private func heightForTrack(at index: Int) -> CGFloat {
@@ -201,17 +272,46 @@ final class TimelineView: NSView {
         return max(520, rulerHeight + trackHeights + 24)
     }
 
+    private func invalidatePlayhead(from oldTime: TimeInterval, to newTime: TimeInterval) {
+        let oldX = x(for: oldTime)
+        let newX = x(for: newTime)
+        let rect = NSRect(
+            x: min(oldX, newX) - 4,
+            y: visibleRect.minY,
+            width: abs(newX - oldX) + 8,
+            height: max(1, visibleRect.height)
+        )
+        setNeedsDisplay(rect)
+    }
+
+    private func invalidateVisibleTrackHeaders() {
+        let rect = NSRect(
+            x: stickyHeaderX,
+            y: visibleRect.minY,
+            width: trackHeaderWidth + 2,
+            height: max(1, visibleRect.height)
+        )
+        setNeedsDisplay(rect)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
+        let renderRect = dirtyRect.intersection(visibleRect)
+        guard !renderRect.isNull, !renderRect.isEmpty else { return }
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSBezierPath(rect: renderRect).addClip()
+        defer { NSGraphicsContext.current?.restoreGraphicsState() }
+
         NSColor(calibratedWhite: 0.11, alpha: 1).setFill()
-        bounds.fill()
-        drawRuler()
-        drawTracks()
-        drawInOutRange()
-        drawDropPreview()
-        drawSnapGuide()
-        drawPlayhead()
-        drawMarquee()
+        renderRect.fill()
+        drawRuler(in: renderRect)
+        drawTracks(in: renderRect)
+        drawInOutRange(in: renderRect)
+        drawDropPreview(in: renderRect)
+        drawSnapGuide(in: renderRect)
+        drawPlayhead(in: renderRect)
+        drawMarquee(in: renderRect)
         drawEmptyTimelineHintIfNeeded()
+        drawStickyHeaderChrome(in: renderRect)
     }
 
     @discardableResult
@@ -223,26 +323,36 @@ final class TimelineView: NSView {
         return true
     }
 
-    private func drawRuler() {
+    private func drawRuler(in renderRect: NSRect) {
+        let rulerRect = renderRect.intersection(NSRect(x: 0, y: 0, width: bounds.width, height: rulerHeight))
         NSColor(calibratedWhite: 0.16, alpha: 1).setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: rulerHeight).fill()
-        NSColor(calibratedWhite: 0.13, alpha: 1).setFill()
-        NSRect(x: 0, y: 0, width: trackHeaderWidth, height: rulerHeight).fill()
+        rulerRect.fill()
         let context = NSStringDrawingContext()
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular), .foregroundColor: NSColor.lightGray]
         let step = niceStep()
-        var time = 0.0
-        while x(for: time) < bounds.maxX {
+        let firstX = max(stickyHeaderMaxX, renderRect.minX)
+        var time = max(0, floor(time(forX: firstX) / step) * step)
+        while x(for: time) <= renderRect.maxX + 1 {
             let x = self.x(for: time)
             NSColor.darkGray.setStroke()
-            NSBezierPath.strokeLine(from: NSPoint(x: x, y: rulerHeight - 8), to: NSPoint(x: x, y: bounds.height))
-            (Timecode.string(time) as NSString).draw(with: NSRect(x: x + 4, y: 6, width: 80, height: 16), options: .usesLineFragmentOrigin, attributes: attrs, context: context)
+            NSBezierPath.strokeLine(
+                from: NSPoint(x: x, y: max(rulerHeight - 8, renderRect.minY)),
+                to: NSPoint(x: x, y: renderRect.maxY)
+            )
+            if !rulerRect.isEmpty {
+                (Timecode.string(time) as NSString).draw(
+                    with: NSRect(x: x + 4, y: 6, width: 80, height: 16),
+                    options: .usesLineFragmentOrigin,
+                    attributes: attrs,
+                    context: context
+                )
+            }
             time += step
         }
-        drawMarkers()
+        drawMarkers(in: renderRect)
     }
 
-    private func drawInOutRange() {
+    private func drawInOutRange(in renderRect: NSRect) {
         let inPoint = project.viewState.inPoint
         let outPoint = project.viewState.outPoint
         guard inPoint != nil || outPoint != nil else { return }
@@ -251,32 +361,44 @@ final class TimelineView: NSView {
             let startX = x(for: range.start)
             let endX = x(for: range.end)
             let rect = NSRect(x: startX, y: 0, width: max(1, endX - startX), height: bounds.height)
-            NSColor.systemBlue.withAlphaComponent(0.08).setFill()
-            rect.fill()
+            let visibleRangeRect = rect.intersection(renderRect)
+            if !visibleRangeRect.isEmpty {
+                NSColor.systemBlue.withAlphaComponent(0.08).setFill()
+                visibleRangeRect.fill()
+            }
             NSColor.systemBlue.withAlphaComponent(0.65).setStroke()
-            NSBezierPath.strokeLine(from: NSPoint(x: startX, y: 0), to: NSPoint(x: startX, y: bounds.height))
-            NSBezierPath.strokeLine(from: NSPoint(x: endX, y: 0), to: NSPoint(x: endX, y: bounds.height))
-            drawRangeFlag(title: "IN", x: startX)
-            drawRangeFlag(title: "OUT", x: endX)
+            if startX >= renderRect.minX - 1 && startX <= renderRect.maxX + 1 {
+                NSBezierPath.strokeLine(from: NSPoint(x: startX, y: renderRect.minY), to: NSPoint(x: startX, y: renderRect.maxY))
+                drawRangeFlag(title: "IN", x: startX, in: renderRect)
+            }
+            if endX >= renderRect.minX - 1 && endX <= renderRect.maxX + 1 {
+                NSBezierPath.strokeLine(from: NSPoint(x: endX, y: renderRect.minY), to: NSPoint(x: endX, y: renderRect.maxY))
+                drawRangeFlag(title: "OUT", x: endX, in: renderRect)
+            }
         } else {
             if let inPoint = inPoint {
                 let markerX = x(for: inPoint)
-                NSColor.systemBlue.withAlphaComponent(0.75).setStroke()
-                NSBezierPath.strokeLine(from: NSPoint(x: markerX, y: 0), to: NSPoint(x: markerX, y: bounds.height))
-                drawRangeFlag(title: "IN", x: markerX)
+                if markerX >= renderRect.minX - 1 && markerX <= renderRect.maxX + 1 {
+                    NSColor.systemBlue.withAlphaComponent(0.75).setStroke()
+                    NSBezierPath.strokeLine(from: NSPoint(x: markerX, y: renderRect.minY), to: NSPoint(x: markerX, y: renderRect.maxY))
+                    drawRangeFlag(title: "IN", x: markerX, in: renderRect)
+                }
             }
             if let outPoint = outPoint {
                 let markerX = x(for: outPoint)
-                NSColor.systemPurple.withAlphaComponent(0.75).setStroke()
-                NSBezierPath.strokeLine(from: NSPoint(x: markerX, y: 0), to: NSPoint(x: markerX, y: bounds.height))
-                drawRangeFlag(title: "OUT", x: markerX)
+                if markerX >= renderRect.minX - 1 && markerX <= renderRect.maxX + 1 {
+                    NSColor.systemPurple.withAlphaComponent(0.75).setStroke()
+                    NSBezierPath.strokeLine(from: NSPoint(x: markerX, y: renderRect.minY), to: NSPoint(x: markerX, y: renderRect.maxY))
+                    drawRangeFlag(title: "OUT", x: markerX, in: renderRect)
+                }
             }
         }
     }
 
-    private func drawRangeFlag(title: String, x: CGFloat) {
-        guard x >= trackHeaderWidth else { return }
+    private func drawRangeFlag(title: String, x: CGFloat, in renderRect: NSRect) {
+        guard x >= stickyHeaderMaxX else { return }
         let rect = NSRect(x: x + 3, y: 4, width: title == "IN" ? 22 : 32, height: 14)
+        guard rect.intersects(renderRect) else { return }
         NSColor.systemBlue.withAlphaComponent(0.88).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
         let attrs: [NSAttributedString.Key: Any] = [
@@ -286,73 +408,75 @@ final class TimelineView: NSView {
         (title as NSString).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: attrs)
     }
 
-    private func drawMarkers() {
+    private func drawMarkers(in renderRect: NSRect) {
         for marker in project.timeline.markers {
             let markerX = x(for: marker.time)
-            guard markerX >= trackHeaderWidth else { continue }
-            NSColor.systemOrange.setFill()
-            let triangle = NSBezierPath()
-            triangle.move(to: NSPoint(x: markerX, y: rulerHeight - 3))
-            triangle.line(to: NSPoint(x: markerX - 5, y: rulerHeight - 13))
-            triangle.line(to: NSPoint(x: markerX + 5, y: rulerHeight - 13))
-            triangle.close()
-            triangle.fill()
+            guard markerX >= stickyHeaderMaxX,
+                  markerX >= renderRect.minX - 104,
+                  markerX <= renderRect.maxX + 8 else {
+                continue
+            }
+            if renderRect.minY < rulerHeight {
+                NSColor.systemOrange.setFill()
+                let triangle = NSBezierPath()
+                triangle.move(to: NSPoint(x: markerX, y: rulerHeight - 3))
+                triangle.line(to: NSPoint(x: markerX - 5, y: rulerHeight - 13))
+                triangle.line(to: NSPoint(x: markerX + 5, y: rulerHeight - 13))
+                triangle.close()
+                triangle.fill()
+            }
             NSColor.systemOrange.withAlphaComponent(0.45).setStroke()
-            NSBezierPath.strokeLine(from: NSPoint(x: markerX, y: rulerHeight), to: NSPoint(x: markerX, y: bounds.height))
-            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.systemOrange]
-            (marker.name as NSString).draw(in: NSRect(x: markerX + 4, y: 5, width: 100, height: 14), withAttributes: attrs)
+            NSBezierPath.strokeLine(from: NSPoint(x: markerX, y: max(rulerHeight, renderRect.minY)), to: NSPoint(x: markerX, y: renderRect.maxY))
+            if renderRect.minY < rulerHeight {
+                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .medium), .foregroundColor: NSColor.systemOrange]
+                (marker.name as NSString).draw(in: NSRect(x: markerX + 4, y: 5, width: 100, height: 14), withAttributes: attrs)
+            }
         }
     }
 
-    private func drawTracks() {
+    private func drawTracks(in renderRect: NSRect) {
         for (trackIndex, track) in project.timeline.tracks.enumerated() {
             let y = trackY(for: trackIndex)
             let laneHeight = height(for: track)
+            let laneRect = NSRect(x: 0, y: y, width: bounds.width, height: laneHeight)
+            guard laneRect.intersects(renderRect) else { continue }
             NSColor(calibratedWhite: trackIndex % 2 == 0 ? 0.135 : 0.12, alpha: 1).setFill()
-            NSRect(x: 0, y: y, width: bounds.width, height: laneHeight).fill()
-            drawTrackHeader(track, y: y)
+            laneRect.intersection(renderRect).fill()
             NSColor(calibratedWhite: 0.24, alpha: 1).setStroke()
-            NSBezierPath.strokeLine(from: NSPoint(x: 0, y: y), to: NSPoint(x: bounds.width, y: y))
-            for clip in track.clips {
-                drawClip(clip, trackIndex: trackIndex)
+            if y >= renderRect.minY - 1 && y <= renderRect.maxY + 1 {
+                NSBezierPath.strokeLine(from: NSPoint(x: renderRect.minX, y: y), to: NSPoint(x: renderRect.maxX, y: y))
             }
-            drawCrossfades(for: track, trackIndex: trackIndex)
+            for clip in track.clips {
+                if rect(for: clip, trackIndex: trackIndex).intersects(renderRect) {
+                    drawClip(clip, trackIndex: trackIndex)
+                }
+            }
+            drawCrossfades(for: track, trackIndex: trackIndex, in: renderRect)
         }
-        drawTrackReorderPreview()
+        drawTrackReorderPreview(in: renderRect)
     }
 
-    private func drawDropPreview() {
+    private func drawDropPreview(in renderRect: NSRect) {
         guard let preview = dropPreview else { return }
         let y = trackY(for: preview.trackIndex)
         let laneHeight = preview.trackIndex < project.timeline.tracks.count ? heightForTrack(at: preview.trackIndex) : expandedTrackHeight
-        let laneRect = NSRect(x: trackHeaderWidth, y: y, width: max(0, bounds.width - trackHeaderWidth), height: laneHeight)
-        let isVirtualTrack = preview.trackIndex >= project.timeline.tracks.count
+        let laneRect = NSRect(x: stickyHeaderMaxX, y: y, width: max(0, bounds.maxX - stickyHeaderMaxX), height: laneHeight)
+        guard laneRect.intersects(renderRect) else { return }
         let accent = preview.allowed ? NSColor.controlAccentColor : NSColor.systemRed
 
         accent.withAlphaComponent(preview.allowed ? 0.16 : 0.12).setFill()
-        laneRect.fill()
+        laneRect.intersection(renderRect).fill()
         accent.withAlphaComponent(preview.allowed ? 0.85 : 0.75).setStroke()
-        let laneOutline = NSBezierPath(rect: laneRect.insetBy(dx: 1, dy: 1))
+        let laneOutline = NSBezierPath(rect: laneRect.intersection(renderRect).insetBy(dx: 1, dy: 1))
         laneOutline.lineWidth = 1.5
         laneOutline.stroke()
-
-        if isVirtualTrack {
-            let headerRect = NSRect(x: 0, y: y, width: trackHeaderWidth, height: laneHeight)
-            NSColor.controlAccentColor.withAlphaComponent(0.10).setFill()
-            headerRect.fill()
-            let name = preview.clamped ? "Create A\(preview.trackIndex + 1) max" : "Create A\(preview.trackIndex + 1)"
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: NSColor.controlAccentColor
-            ]
-            (name as NSString).draw(in: NSRect(x: 10, y: y + 9, width: trackHeaderWidth - 20, height: 18), withAttributes: attrs)
-        }
 
         guard preview.allowed else { return }
         let assetDuration = project.asset(id: preview.assetID)?.metadata.duration ?? 4
         let ghostWidth = min(max(36, CGFloat(assetDuration / secondsPerPoint)), max(48, visibleRect.width * 0.65))
         let inset: CGFloat = laneHeight < 50 ? 6 : 10
         let ghostRect = NSRect(x: x(for: preview.time), y: y + inset, width: ghostWidth, height: max(18, laneHeight - inset * 2))
+        guard ghostRect.intersects(renderRect) else { return }
         NSColor.controlAccentColor.withAlphaComponent(0.28).setFill()
         NSBezierPath(roundedRect: ghostRect, xRadius: 5, yRadius: 5).fill()
         NSColor.controlAccentColor.withAlphaComponent(0.95).setStroke()
@@ -364,9 +488,9 @@ final class TimelineView: NSView {
     private func drawTrackHeader(_ track: Track, y: CGFloat) {
         let laneHeight = height(for: track)
         NSColor(calibratedWhite: 0.155, alpha: 1).setFill()
-        NSRect(x: 0, y: y, width: trackHeaderWidth, height: laneHeight).fill()
+        NSRect(x: stickyHeaderX, y: y, width: trackHeaderWidth, height: laneHeight).fill()
         NSColor(calibratedWhite: 0.26, alpha: 1).setStroke()
-        NSBezierPath.strokeLine(from: NSPoint(x: trackHeaderWidth, y: y), to: NSPoint(x: trackHeaderWidth, y: y + laneHeight))
+        NSBezierPath.strokeLine(from: NSPoint(x: stickyHeaderMaxX, y: y), to: NSPoint(x: stickyHeaderMaxX, y: y + laneHeight))
 
         let nameAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.labelColor]
         (track.name as NSString).draw(in: trackNameRect(y: y), withAttributes: nameAttrs)
@@ -380,6 +504,57 @@ final class TimelineView: NSView {
         } else {
             drawTrackMixControls(track, y: y)
         }
+    }
+
+    private func drawStickyHeaderChrome(in renderRect: NSRect) {
+        let headerRect = NSRect(x: stickyHeaderX, y: renderRect.minY, width: trackHeaderWidth, height: renderRect.height)
+        NSColor(calibratedWhite: 0.145, alpha: 1).setFill()
+        headerRect.fill()
+        let headerRulerRect = headerRect.intersection(NSRect(x: stickyHeaderX, y: 0, width: trackHeaderWidth, height: rulerHeight))
+        if !headerRulerRect.isEmpty {
+            NSColor(calibratedWhite: 0.13, alpha: 1).setFill()
+            headerRulerRect.fill()
+        }
+
+        for (index, track) in project.timeline.tracks.enumerated() {
+            let y = trackY(for: index)
+            let laneRect = NSRect(x: stickyHeaderX, y: y, width: trackHeaderWidth, height: height(for: track))
+            if laneRect.intersects(renderRect) {
+                drawTrackHeader(track, y: y)
+            }
+        }
+
+        drawStickyDropTargetIfNeeded(in: renderRect)
+        NSColor(calibratedWhite: 0.26, alpha: 1).setStroke()
+        NSBezierPath.strokeLine(
+            from: NSPoint(x: stickyHeaderMaxX, y: renderRect.minY),
+            to: NSPoint(x: stickyHeaderMaxX, y: renderRect.maxY)
+        )
+    }
+
+    private func drawStickyDropTargetIfNeeded(in renderRect: NSRect) {
+        guard let preview = dropPreview else { return }
+        let isVirtualTrack = preview.trackIndex >= project.timeline.tracks.count
+        guard preview.isHeaderDrop || isVirtualTrack else { return }
+
+        let y = trackY(for: preview.trackIndex)
+        let laneHeight = preview.trackIndex < project.timeline.tracks.count ? heightForTrack(at: preview.trackIndex) : expandedTrackHeight
+        let accent = preview.allowed ? NSColor.controlAccentColor : NSColor.systemRed
+        let headerRect = NSRect(x: stickyHeaderX, y: y, width: trackHeaderWidth, height: laneHeight)
+        guard headerRect.intersects(renderRect) else { return }
+        accent.withAlphaComponent(preview.allowed ? 0.12 : 0.08).setFill()
+        headerRect.intersection(renderRect).fill()
+
+        guard isVirtualTrack else { return }
+        let name = preview.clamped ? "Create A\(preview.trackIndex + 1) max" : "Create A\(preview.trackIndex + 1)"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            .foregroundColor: accent
+        ]
+        (name as NSString).draw(
+            in: NSRect(x: stickyHeaderX + 10, y: y + 9, width: trackHeaderWidth - 20, height: 18),
+            withAttributes: attrs
+        )
     }
 
     private func drawTrackMixControls(_ track: Track, y: CGFloat) {
@@ -419,7 +594,7 @@ final class TimelineView: NSView {
         let text = "Drag media here to start editing" as NSString
         let size = text.size(withAttributes: attrs)
         let visible = visibleRect
-        let x = max(trackHeaderWidth + 24, visible.midX - size.width / 2)
+        let x = max(stickyHeaderMaxX + 24, visible.midX - size.width / 2)
         let y = max(rulerHeight + 40, visible.midY - size.height / 2)
         text.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
     }
@@ -472,13 +647,14 @@ final class TimelineView: NSView {
         path.fill()
     }
 
-    private func drawTrackReorderPreview() {
+    private func drawTrackReorderPreview(in renderRect: NSRect) {
         guard let drag = trackReorderDrag, drag.hasMoved else { return }
         let y = trackY(for: drag.currentIndex)
+        guard y >= renderRect.minY - 1 && y <= renderRect.maxY + 1 else { return }
         NSColor.controlAccentColor.withAlphaComponent(0.85).setStroke()
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: 0, y: y))
-        path.line(to: NSPoint(x: bounds.width, y: y))
+        path.move(to: NSPoint(x: stickyHeaderMaxX, y: y))
+        path.line(to: NSPoint(x: renderRect.maxX, y: y))
         path.lineWidth = 2
         path.stroke()
     }
@@ -680,7 +856,7 @@ final class TimelineView: NSView {
         }
     }
 
-    private func drawCrossfades(for track: Track, trackIndex: Int) {
+    private func drawCrossfades(for track: Track, trackIndex: Int, in renderRect: NSRect) {
         let clipIDs = Set(track.clips.map(\.id))
         for crossfade in project.timeline.crossfades where clipIDs.contains(crossfade.leadingClipID) && clipIDs.contains(crossfade.trailingClipID) {
             let startX = x(for: crossfade.startTime)
@@ -691,6 +867,7 @@ final class TimelineView: NSView {
             let topInset: CGFloat = laneHeight < 50 ? 7 : 24
             let bottomInset: CGFloat = laneHeight < 50 ? 7 : 18
             let rect = NSRect(x: startX, y: y + topInset, width: endX - startX, height: max(16, laneHeight - topInset - bottomInset))
+            guard rect.intersects(renderRect) else { continue }
             NSColor.systemPurple.withAlphaComponent(0.18).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
             NSColor.systemPurple.withAlphaComponent(0.85).setStroke()
@@ -884,27 +1061,29 @@ final class TimelineView: NSView {
         path.stroke()
     }
 
-    private func drawPlayhead() {
+    private func drawPlayhead(in renderRect: NSRect) {
         let x = self.x(for: playheadTime)
+        guard x >= renderRect.minX - 2 && x <= renderRect.maxX + 2 else { return }
         NSColor.systemRed.setStroke()
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: x, y: 0))
-        path.line(to: NSPoint(x: x, y: bounds.height))
+        path.move(to: NSPoint(x: x, y: renderRect.minY))
+        path.line(to: NSPoint(x: x, y: renderRect.maxY))
         path.lineWidth = 2
         path.stroke()
     }
 
-    private func drawSnapGuide() {
+    private func drawSnapGuide(in renderRect: NSRect) {
         guard let snapGuideX = snapGuideX else { return }
+        guard snapGuideX >= renderRect.minX - 1 && snapGuideX <= renderRect.maxX + 1 else { return }
         NSColor.systemYellow.withAlphaComponent(0.45).setStroke()
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: snapGuideX, y: rulerHeight))
-        path.line(to: NSPoint(x: snapGuideX, y: bounds.height))
+        path.move(to: NSPoint(x: snapGuideX, y: max(rulerHeight, renderRect.minY)))
+        path.line(to: NSPoint(x: snapGuideX, y: renderRect.maxY))
         path.lineWidth = 1
         path.stroke()
     }
 
-    private func drawMarquee() {
+    private func drawMarquee(in renderRect: NSRect) {
         guard let start = marqueeStart, let current = marqueeCurrent else { return }
         let rect = NSRect(
             x: min(start.x, current.x),
@@ -912,8 +1091,9 @@ final class TimelineView: NSView {
             width: abs(start.x - current.x),
             height: abs(start.y - current.y)
         )
+        guard rect.intersects(renderRect) else { return }
         NSColor.systemBlue.withAlphaComponent(0.16).setFill()
-        rect.fill()
+        rect.intersection(renderRect).fill()
         NSColor.systemBlue.withAlphaComponent(0.8).setStroke()
         NSBezierPath(rect: rect).stroke()
     }
@@ -926,10 +1106,31 @@ final class TimelineView: NSView {
         clearTrimHover()
     }
 
+    @objc private func handleMagnification(_ gesture: NSMagnificationGestureRecognizer) {
+        let location = gesture.location(in: self)
+        switch gesture.state {
+        case .began:
+            guard location.x >= stickyHeaderMaxX else { return }
+            pinchZoomState = PinchZoomState(
+                initialZoom: project.viewState.zoom,
+                anchorTime: time(forX: location.x),
+                anchorViewportX: location.x - visibleRect.minX
+            )
+        case .changed:
+            guard let state = pinchZoomState else { return }
+            let zoom = state.initialZoom * exp(Double(gesture.magnification) * 2.2)
+            onPinchZoom?(zoom, state.anchorTime, state.anchorViewportX)
+        case .ended, .cancelled, .failed:
+            pinchZoomState = nil
+        default:
+            break
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if point.y < rulerHeight {
-            if point.x >= trackHeaderWidth {
+            if point.x >= stickyHeaderMaxX {
                 if let marker = hitMarker(at: point) {
                     onSetPlayhead?(marker.time)
                 } else {
@@ -938,7 +1139,7 @@ final class TimelineView: NSView {
             }
             return
         }
-        if point.x < trackHeaderWidth {
+        if isPointInStickyHeader(point) {
             if !handleTrackHeaderClick(at: point, clickCount: event.clickCount),
                let index = trackIndexIfExisting(forY: point.y) {
                 trackReorderDrag = TrackReorderDrag(trackID: project.timeline.tracks[index].id, sourceIndex: index, currentIndex: index, startY: point.y)
@@ -953,11 +1154,13 @@ final class TimelineView: NSView {
                 onStatusMessage?(fadeHit.edge == .left ? "Fade in: 0.00s" : "Fade out: 0.00s")
                 return
             }
+            beginContinuousEdit(fadeHit.edge == .left ? "Fade In" : "Fade Out")
             fadeHandleDrag = FadeHandleDrag(clipID: fadeHit.clip.id, edge: fadeHit.edge, trackIndex: fadeHit.trackIndex)
             return
         }
         if let keyHit = hitVolumeKeyframe(at: point) {
             selectedVolumeKeyframe = VolumeKeyframeSelection(clipID: keyHit.clip.id, keyframeID: keyHit.keyframe.id)
+            beginContinuousEdit("Move Volume Keyframe")
             volumeKeyframeDrag = selectedVolumeKeyframe
             onSelectClipWithModifiers?(keyHit.clip.id, false, selectedClipIDs.contains(keyHit.clip.id))
             needsDisplay = true
@@ -1000,9 +1203,17 @@ final class TimelineView: NSView {
             edge = nil
         }
         var dragClipID = hit.clip.id
-        if edge == nil, event.modifierFlags.contains(.option), let duplicatedID = onDuplicateSelectionForDrag?(hit.clip.id) {
+        if edge == nil, event.modifierFlags.contains(.option) {
+            // Begin before duplicating so the duplicate and its drag are one undoable action.
+            beginContinuousEdit("Option-Drag Duplicate")
+            guard let duplicatedID = onDuplicateSelectionForDrag?(hit.clip.id) else {
+                endContinuousEdit()
+                return
+            }
             dragClipID = duplicatedID
             onStatusMessage?("Duplicating selected clips")
+        } else {
+            beginContinuousEdit(edge == nil ? "Move Clip" : "Trim Clip")
         }
         dragState = DragState(clipID: dragClipID, offset: point.x - rect.minX, edge: edge)
     }
@@ -1081,6 +1292,7 @@ final class TimelineView: NSView {
         volumeKeyframeDrag = nil
         snapGuideX = nil
         trackMixDrag = nil
+        endContinuousEdit()
         if let reorder = trackReorderDrag {
             if reorder.hasMoved {
                 onReorderTrack?(reorder.trackID, reorder.currentIndex)
@@ -1119,7 +1331,7 @@ final class TimelineView: NSView {
             return false
         }
         let point = convert(sender.draggingLocation, from: nil)
-        guard point.x >= trackHeaderWidth, point.y >= rulerHeight else { return false }
+        guard point.y >= rulerHeight else { return false }
         let targetTrack = dropTrackIndex(forY: point.y)
         if targetTrack < project.timeline.tracks.count, project.timeline.tracks[targetTrack].isLocked {
             onStatusMessage?("Cannot drop onto locked track")
@@ -1127,7 +1339,7 @@ final class TimelineView: NSView {
             needsDisplay = true
             return false
         }
-        onDropAsset?(assetID, snap(time(forX: point.x)), targetTrack)
+        onDropAsset?(assetID, dropTime(for: point), targetTrack)
         dropPreview = nil
         snapGuideX = nil
         needsDisplay = true
@@ -1138,7 +1350,6 @@ final class TimelineView: NSView {
         let point = convert(sender.draggingLocation, from: nil)
         guard let idString = sender.draggingPasteboard.string(forType: mediaAssetPasteboardType),
               let assetID = UUID(uuidString: idString),
-              point.x >= trackHeaderWidth,
               point.y >= rulerHeight else {
             dropPreview = nil
             needsDisplay = true
@@ -1146,15 +1357,15 @@ final class TimelineView: NSView {
         }
         let requestedIndex = rawDropTrackIndex(forY: point.y)
         let index = dropTrackIndex(forY: point.y)
-        let snappedTime = snap(time(forX: point.x))
+        let snappedTime = dropTime(for: point)
         let clamped = requestedIndex != index
         if index < project.timeline.tracks.count, project.timeline.tracks[index].isLocked {
-            dropPreview = DropPreview(assetID: assetID, time: snappedTime, trackIndex: index, allowed: false, clamped: clamped)
+            dropPreview = DropPreview(assetID: assetID, time: snappedTime, trackIndex: index, allowed: false, clamped: clamped, isHeaderDrop: isPointInStickyHeader(point))
             onStatusMessage?("Cannot drop onto locked track")
             needsDisplay = true
             return []
         }
-        dropPreview = DropPreview(assetID: assetID, time: snappedTime, trackIndex: index, allowed: true, clamped: clamped)
+        dropPreview = DropPreview(assetID: assetID, time: snappedTime, trackIndex: index, allowed: true, clamped: clamped, isHeaderDrop: isPointInStickyHeader(point))
         needsDisplay = true
         return .copy
     }
@@ -1249,6 +1460,10 @@ final class TimelineView: NSView {
 
     private func updateHoverCursor(at point: NSPoint) {
         guard fadeHandleDrag == nil, volumeKeyframeDrag == nil, dragState == nil else { return }
+        guard !isPointInStickyHeader(point) else {
+            clearTrimHover()
+            return
+        }
         if hitFadeHandle(at: point) != nil || hitVolumeKeyframe(at: point) != nil || hitCrossfadeRegion(at: point) {
             clearTrimHover()
             return
@@ -1289,7 +1504,8 @@ final class TimelineView: NSView {
     }
 
     private func hitMarker(at point: NSPoint) -> TimelineMarker? {
-        project.timeline.markers.first { marker in
+        guard point.x >= stickyHeaderMaxX else { return nil }
+        return project.timeline.markers.first { marker in
             abs(x(for: marker.time) - point.x) < 7
         }
     }
@@ -1317,10 +1533,12 @@ final class TimelineView: NSView {
             onToggleTrackLock?(track.id)
             return true
         } else if volumeSliderRect(y: trackY).insetBy(dx: -4, dy: -6).contains(point) {
+            beginContinuousEdit("Track Volume")
             trackMixDrag = TrackMixDrag(trackID: track.id, trackIndex: index, control: .volume)
             updateTrackMixDrag(trackMixDrag!, at: point)
             return true
         } else if panSliderRect(y: trackY).insetBy(dx: -4, dy: -6).contains(point) {
+            beginContinuousEdit("Track Pan")
             trackMixDrag = TrackMixDrag(trackID: track.id, trackIndex: index, control: .pan)
             updateTrackMixDrag(trackMixDrag!, at: point)
             return true
@@ -1352,43 +1570,50 @@ final class TimelineView: NSView {
 
     private func buttonRect(index: Int, y: CGFloat) -> NSRect {
         guard let track = trackAt(y: y) else {
-            return NSRect(x: 10 + CGFloat(index) * 34, y: y + 56, width: 27, height: 21)
+            return NSRect(x: stickyHeaderX + 10 + CGFloat(index) * 34, y: y + 56, width: 27, height: 21)
         }
         guard track.isCollapsed else {
             let laneHeight = height(for: track)
-            return NSRect(x: 10 + CGFloat(index) * 34, y: y + min(56, laneHeight - 24), width: 27, height: 21)
+            return NSRect(x: stickyHeaderX + 10 + CGFloat(index) * 34, y: y + min(56, laneHeight - 24), width: 27, height: 21)
         }
-        return NSRect(x: 50 + CGFloat(index) * 30, y: y + 8, width: 24, height: 20)
+        return NSRect(x: stickyHeaderX + 50 + CGFloat(index) * 30, y: y + 8, width: 24, height: 20)
     }
 
     private func trackNameRect(y: CGFloat) -> NSRect {
         let width: CGFloat = trackAt(y: y)?.isCollapsed == true ? 36 : trackHeaderWidth - 44
-        return NSRect(x: 10, y: y + 8, width: width, height: 17)
+        return NSRect(x: stickyHeaderX + 10, y: y + 8, width: width, height: 17)
     }
 
     private func collapseButtonRect(y: CGFloat) -> NSRect {
-        NSRect(x: trackHeaderWidth - 24, y: y + 7, width: 16, height: 16)
+        NSRect(x: stickyHeaderX + trackHeaderWidth - 24, y: y + 7, width: 16, height: 16)
     }
 
     private func volumeSliderRect(y: CGFloat) -> NSRect {
         let compactOffset: CGFloat = (trackAt(y: y).map { height(for: $0) < 82 } ?? false) ? 28 : 32
-        return NSRect(x: 26, y: y + compactOffset, width: 66, height: 6)
+        return NSRect(x: stickyHeaderX + 26, y: y + compactOffset, width: 66, height: 6)
     }
 
     private func panSliderRect(y: CGFloat) -> NSRect {
         let compactOffset: CGFloat = (trackAt(y: y).map { height(for: $0) < 82 } ?? false) ? 39 : 45
-        return NSRect(x: 26, y: y + compactOffset, width: 66, height: 6)
+        return NSRect(x: stickyHeaderX + 26, y: y + compactOffset, width: 66, height: 6)
     }
 
     private func trackMeterRect(y: CGFloat) -> NSRect {
         guard let track = trackAt(y: y), track.isCollapsed else {
-            return NSRect(x: 10, y: y + expandedTrackHeight - 6, width: trackHeaderWidth - 20, height: 4)
+            return NSRect(x: stickyHeaderX + 10, y: y + expandedTrackHeight - 6, width: trackHeaderWidth - 20, height: 4)
         }
-        return NSRect(x: 10, y: y + 29, width: trackHeaderWidth - 20, height: 4)
+        return NSRect(x: stickyHeaderX + 10, y: y + 29, width: trackHeaderWidth - 20, height: 4)
     }
 
     private func trackIndex(forY y: CGFloat) -> Int {
         trackIndexIfExisting(forY: y) ?? min(max(rawDropTrackIndex(forY: y), 0), max(project.timeline.tracks.count - 1, 0))
+    }
+
+    private func dropTime(for point: NSPoint) -> TimeInterval {
+        if isPointInStickyHeader(point) {
+            return max(0, playheadTime)
+        }
+        return snap(time(forX: point.x))
     }
 
     private func trackIndexIfExisting(forY y: CGFloat) -> Int? {
@@ -1555,7 +1780,9 @@ final class TimelineView: NSView {
         if pixelsPerSecond > 5 { return 30 }
         if pixelsPerSecond > 2 { return 60 }
         if pixelsPerSecond > 0.5 { return 300 }
-        return 600
+        if pixelsPerSecond > 0.15 { return 600 }
+        if pixelsPerSecond > 0.05 { return 1800 }
+        return 7200
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -1567,7 +1794,7 @@ final class TimelineView: NSView {
             menu.items.forEach { $0.target = self }
             return menu
         }
-        if point.x < trackHeaderWidth, point.y >= rulerHeight {
+        if isPointInStickyHeader(point), point.y >= rulerHeight {
             let index = trackIndex(forY: point.y)
             guard index < project.timeline.tracks.count else { return nil }
             let track = project.timeline.tracks[index]

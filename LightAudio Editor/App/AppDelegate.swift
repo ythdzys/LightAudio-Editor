@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
     private var crashRecoveryController: CrashRecoveryController?
     private var preferencesWindowController: PreferencesWindowController?
+    private var hasCheckedForRecovery = false
+    private var recoverySessionStarted = false
+    private var terminationReplyPending = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -25,17 +28,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = mainWindowController ?? MainWindowController(projectController: projectController)
         mainWindowController = controller
         mainWindow = controller.window
-        crashRecoveryController = CrashRecoveryController(recoveryService: recoveryService)
+        crashRecoveryController = crashRecoveryController ?? CrashRecoveryController(recoveryService: recoveryService)
         controller.showWindow(self)
         controller.window?.center()
         controller.window?.makeKeyAndOrderFront(self)
         controller.window?.orderFrontRegardless()
-        crashRecoveryController?.checkForRecovery(presenter: controller.window, openSaved: { url in
-            projectController.open(url: url)
-        }) { snapshot in
-            projectController.restore(snapshot: snapshot)
+        if !hasCheckedForRecovery {
+            hasCheckedForRecovery = true
+            crashRecoveryController?.checkForRecovery(presenter: controller.window, openSaved: { url in
+                projectController.open(url: url)
+            }) { snapshot in
+                projectController.restore(snapshot: snapshot)
+            }
         }
-        recoveryService.markSessionStarted()
+        if !recoverySessionStarted {
+            recoverySessionStarted = true
+            recoveryService.markSessionStarted()
+        }
     }
 
     private func ensureMainWindowVisible() {
@@ -47,7 +56,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        recoveryService.markCleanShutdown()
+        if recoverySessionStarted {
+            recoveryService.markCleanShutdown()
+        }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminationReplyPending else { return .terminateLater }
+        guard let controller = mainWindowController, controller.hasUnsavedChanges else {
+            return .terminateNow
+        }
+
+        terminationReplyPending = true
+        controller.confirmTermination { [weak self, weak sender] shouldTerminate in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.terminationReplyPending = false
+                sender?.reply(toApplicationShouldTerminate: shouldTerminate)
+            }
+        }
+        return .terminateLater
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -217,7 +245,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func jumpToNextClipEdge(_ sender: Any?) { mainWindowController?.jumpToNextClipEdge(sender) }
 
     @objc private func showPreferences(_ sender: Any?) {
-        let controller = preferencesWindowController ?? PreferencesWindowController()
+        let controller = preferencesWindowController ?? PreferencesWindowController { [weak self] completion in
+            guard let windowController = self?.mainWindowController else {
+                completion(.failure(NSError(domain: "LightAudio", code: 70, userInfo: [NSLocalizedDescriptionKey: "The main window is not available."])))
+                return
+            }
+            windowController.clearApplicationCaches(completion: completion)
+        }
         preferencesWindowController = controller
         controller.showWindow(sender)
         controller.window?.center()

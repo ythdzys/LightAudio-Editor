@@ -1,63 +1,202 @@
 import Foundation
 import AVFoundation
+import Darwin
 
 protocol AudioExportBackend {
-    func export(project: Project, settings: ExportSettings, progress: @escaping (Double) -> Void) throws -> ExportResult
+    func export(project: Project, settings: ExportSettings, cancellationToken: ExportCancellationToken, progress: @escaping (Double) -> Void) throws -> ExportResult
 }
 
 struct ExportResult {
     var clippingDetected: Bool = false
 }
 
-final class NativeAudioExportBackend: AudioExportBackend {
-    private let renderer = TimelineRenderService()
+/// A single export owns one token from the moment it is requested until it completes.
+/// This avoids a quick Cancel being cleared by work that has not reached a backend yet.
+final class ExportCancellationToken {
+    private let lock = NSLock()
     private var cancelled = false
+    private var handlers: [UUID: () -> Void] = [:]
 
-    func cancel() {
-        cancelled = true
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
     }
 
-    func export(project: Project, settings: ExportSettings, progress: @escaping (Double) -> Void) throws -> ExportResult {
-        cancelled = false
+    func cancel() {
+        lock.lock()
+        guard !cancelled else {
+            lock.unlock()
+            return
+        }
+        cancelled = true
+        let activeHandlers = Array(handlers.values)
+        handlers.removeAll()
+        lock.unlock()
+
+        activeHandlers.forEach { $0() }
+    }
+
+    @discardableResult
+    func addCancellationHandler(_ handler: @escaping () -> Void) -> UUID {
+        let id = UUID()
+        lock.lock()
+        let shouldRunImmediately = cancelled
+        if !shouldRunImmediately {
+            handlers[id] = handler
+        }
+        lock.unlock()
+
+        if shouldRunImmediately {
+            handler()
+        }
+        return id
+    }
+
+    func removeCancellationHandler(_ id: UUID) {
+        lock.lock()
+        handlers.removeValue(forKey: id)
+        lock.unlock()
+    }
+}
+
+private func exportCancellationError() -> NSError {
+    NSError(domain: "LightAudio", code: 11, userInfo: [NSLocalizedDescriptionKey: "Export cancelled."])
+}
+
+/// Source media and generated caches are inputs, never export destinations. Keep this guard in
+/// the render backends as well as the UI so programmatic exports remain non-destructive.
+private func validateExportDestination(_ destinationURL: URL, for project: Project) throws {
+    let destinationPath = canonicalExportPath(destinationURL)
+    let protectedPaths = Set(project.assets.flatMap { asset -> [String] in
+        var urls: [URL] = []
+        if !asset.originalPath.isEmpty {
+            urls.append(URL(fileURLWithPath: asset.originalPath))
+        }
+        if let resolvedPath = asset.resolvedPath, !resolvedPath.isEmpty {
+            urls.append(URL(fileURLWithPath: resolvedPath))
+        }
+        if let proxyPath = asset.proxyPath, !proxyPath.isEmpty {
+            urls.append(URL(fileURLWithPath: proxyPath))
+        }
+        return urls.map(canonicalExportPath)
+    })
+
+    guard !protectedPaths.contains(destinationPath) else {
+        throw NSError(
+            domain: "LightAudioExport",
+            code: 41,
+            userInfo: [NSLocalizedDescriptionKey: "The export destination is an imported media file or generated audio proxy. Choose a different output file to keep project media non-destructive."]
+        )
+    }
+}
+
+private func canonicalExportPath(_ url: URL) -> String {
+    url.resolvingSymlinksInPath().standardizedFileURL.path
+}
+
+/// Keeps an existing export intact until a complete replacement has been rendered beside it.
+private struct ExportOutputTransaction {
+    let destinationURL: URL
+    let stagingURL: URL
+
+    init(destinationURL: URL) {
+        self.destinationURL = destinationURL
+        let directory = destinationURL.deletingLastPathComponent()
+        let baseName = destinationURL.deletingPathExtension().lastPathComponent
+        let fileExtension = destinationURL.pathExtension
+        let extensionSuffix = fileExtension.isEmpty ? "" : ".\(fileExtension)"
+        stagingURL = directory.appendingPathComponent(".\(baseName).lightaudio-\(UUID().uuidString).partial\(extensionSuffix)")
+    }
+
+    func commit(overwritingExisting: Bool) throws {
+        let manager = FileManager.default
+        if manager.fileExists(atPath: destinationURL.path) {
+            guard overwritingExisting else {
+                throw NSError(
+                    domain: "LightAudioExport",
+                    code: 40,
+                    userInfo: [NSLocalizedDescriptionKey: "An output file already exists at this location. Choose a different name or confirm replacement."]
+                )
+            }
+            _ = try manager.replaceItemAt(destinationURL, withItemAt: stagingURL, backupItemName: nil, options: [])
+        } else {
+            try manager.moveItem(at: stagingURL, to: destinationURL)
+        }
+    }
+
+    func discard() {
+        try? FileManager.default.removeItem(at: stagingURL)
+    }
+}
+
+final class NativeAudioExportBackend: AudioExportBackend {
+    private final class SourceCache {
+        var sources: [UUID: TimelineAudioSource] = [:]
+    }
+
+    private let renderer = TimelineRenderService()
+
+    func export(project: Project, settings: ExportSettings, cancellationToken: ExportCancellationToken, progress: @escaping (Double) -> Void) throws -> ExportResult {
+        if cancellationToken.isCancelled { throw exportCancellationError() }
+        try settings.validate()
+        try validateExportDestination(settings.outputURL, for: project)
+        let sourceCache = SourceCache()
         guard settings.format == .wav || settings.format == .aiff else {
             throw NSError(domain: "LightAudio", code: 10, userInfo: [NSLocalizedDescriptionKey: "This MVP exports WAV or AIFF with the native backend."])
         }
 
         let sampleRate = settings.sampleRate
         let channels = AVAudioChannelCount(max(1, min(2, settings.channelCount)))
-        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: channels, interleaved: false)!
+        guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: channels, interleaved: false) else {
+            throw NSError(domain: "LightAudioExport", code: 51, userInfo: [NSLocalizedDescriptionKey: "Could not create the requested output audio format."])
+        }
         let range = renderRange(for: project, settings: settings)
-        let output = try AVAudioFile(forWriting: settings.outputURL, settings: format.settings)
+        let outputTransaction = ExportOutputTransaction(destinationURL: settings.outputURL)
+        defer { outputTransaction.discard() }
         let minimumDuration = settings.range.start == nil ? 0.1 : 0
-        let totalFrames = AVAudioFramePosition(max(range.duration, minimumDuration) * sampleRate)
+        let requestedFrameCount = max(range.duration, minimumDuration) * sampleRate
+        guard requestedFrameCount.isFinite,
+              requestedFrameCount >= 0,
+              requestedFrameCount <= Double(Int64.max) else {
+            throw NSError(domain: "LightAudioExport", code: 52, userInfo: [NSLocalizedDescriptionKey: "The requested export duration is too large."])
+        }
+        let totalFrames = AVAudioFramePosition(requestedFrameCount.rounded(.down))
         let chunkFrames: AVAudioFrameCount = 4096
         var frame: AVAudioFramePosition = 0
         var clippingDetected = false
 
-        while frame < totalFrames {
-            if cancelled { throw NSError(domain: "LightAudio", code: 11, userInfo: [NSLocalizedDescriptionKey: "Export cancelled."]) }
-            let count = AVAudioFrameCount(min(Int64(chunkFrames), totalFrames - frame))
-            guard let mixBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count) else { break }
-            mixBuffer.frameLength = count
-            clear(buffer: mixBuffer)
+        do {
+            let output = try AVAudioFile(forWriting: outputTransaction.stagingURL, settings: format.settings)
+            while frame < totalFrames {
+                if cancellationToken.isCancelled { throw exportCancellationError() }
+                let count = AVAudioFrameCount(min(Int64(chunkFrames), totalFrames - frame))
+                guard let mixBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count) else { break }
+                mixBuffer.frameLength = count
+                clear(buffer: mixBuffer)
 
-            let outputChunkStart = Double(frame) / sampleRate
-            let chunkStart = range.start + outputChunkStart
-            let chunkEnd = range.start + Double(frame + AVAudioFramePosition(count)) / sampleRate
-            for (track, clip, asset) in renderer.activeClips(in: project) {
-                let clipStart = clip.timelineStart
-                let clipEnd = clip.timelineStart + clip.duration
-                if clipEnd <= chunkStart || clipStart >= chunkEnd { continue }
-                try mix(clip: clip, track: track, project: project, asset: asset, into: mixBuffer, chunkStart: chunkStart, sampleRate: sampleRate)
-            }
+                let outputChunkStart = Double(frame) / sampleRate
+                let chunkStart = range.start + outputChunkStart
+                let chunkEnd = range.start + Double(frame + AVAudioFramePosition(count)) / sampleRate
+                for (track, clip, asset) in renderer.activeClips(in: project) {
+                    let clipStart = clip.timelineStart
+                    let clipEnd = clip.timelineStart + clip.duration
+                    if clipEnd <= chunkStart || clipStart >= chunkEnd { continue }
+                    try mix(clip: clip, track: track, project: project, asset: asset, into: mixBuffer, chunkStart: chunkStart, sampleRate: sampleRate, sourceCache: sourceCache)
+                }
 
-            if clampAndDetectClipping(in: mixBuffer) {
-                clippingDetected = true
+                applyMasterGain(project.mixState.masterVolumeDB, to: mixBuffer)
+
+                if clampAndDetectClipping(in: mixBuffer) {
+                    clippingDetected = true
+                }
+                try output.write(from: mixBuffer)
+                frame += AVAudioFramePosition(count)
+                DispatchQueue.main.async { progress(Double(frame) / Double(max(totalFrames, 1))) }
             }
-            try output.write(from: mixBuffer)
-            frame += AVAudioFramePosition(count)
-            DispatchQueue.main.async { progress(Double(frame) / Double(max(totalFrames, 1))) }
         }
+        if cancellationToken.isCancelled { throw exportCancellationError() }
+        try outputTransaction.commit(overwritingExisting: settings.overwriteExisting)
         return ExportResult(clippingDetected: clippingDetected)
     }
 
@@ -82,47 +221,37 @@ final class NativeAudioExportBackend: AudioExportBackend {
         }
     }
 
-    private func mix(clip: Clip, track: Track, project: Project, asset: MediaAsset, into mixBuffer: AVAudioPCMBuffer, chunkStart: TimeInterval, sampleRate: Double) throws {
+    private func mix(clip: Clip, track: Track, project: Project, asset: MediaAsset, into mixBuffer: AVAudioPCMBuffer, chunkStart: TimeInterval, sampleRate: Double, sourceCache: SourceCache) throws {
         guard let url = asset.audioSourceURL else { return }
-        let file = try AVAudioFile(forReading: url)
         let overlapStart = max(chunkStart, clip.timelineStart)
         let overlapEnd = min(chunkStart + Double(mixBuffer.frameLength) / sampleRate, clip.timelineStart + clip.duration)
-        let outputStartFrame = Int((overlapStart - chunkStart) * sampleRate)
-        let requestedFrames = AVAudioFrameCount(max(0, (overlapEnd - overlapStart) * sampleRate))
-        if requestedFrames == 0 { return }
+        guard overlapEnd > overlapStart else { return }
 
-        let sourceStart = clip.sourceStart + (overlapStart - clip.timelineStart)
-        file.framePosition = AVAudioFramePosition(sourceStart * file.processingFormat.sampleRate)
-        guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: requestedFrames) else { return }
-        try file.read(into: inputBuffer, frameCount: requestedFrames)
+        let startFrame = max(0, Int(ceil((overlapStart - chunkStart) * sampleRate)))
+        let endFrame = min(Int(mixBuffer.frameLength), Int(ceil((overlapEnd - chunkStart) * sampleRate)))
+        let frameCount = max(0, endFrame - startFrame)
+        guard frameCount > 0 else { return }
 
-        guard let inData = inputBuffer.floatChannelData, let outData = mixBuffer.floatChannelData else { return }
-        let frames = Int(min(inputBuffer.frameLength, requestedFrames))
-        let inChannels = Int(inputBuffer.format.channelCount)
-        let outChannels = Int(mixBuffer.format.channelCount)
-        let pan = MixMath.combinedPan(clip.pan, track.pan)
-        let leftPan = Float(pan <= 0 ? 1 : 1 - pan)
-        let rightPan = Float(pan >= 0 ? 1 : 1 + pan)
-        let trackGain = MixMath.linearGain(forDB: track.volumeDB)
-        let masterGain = MixMath.linearGain(forDB: project.mixState.masterVolumeDB)
-        for i in 0..<frames {
-            let timelineTime = overlapStart + Double(i) / sampleRate
-            let clipTime = timelineTime - clip.timelineStart
-            let fadeMultiplier = FadeMath.edgeFadeGain(for: clip, timelineTime: timelineTime)
-            let crossfadeMultiplier = FadeMath.crossfadeGain(for: clip.id, timelineTime: timelineTime, timeline: project.timeline)
-            let automationGain = AutomationMath.volumeAutomationGain(for: clip, atClipTime: clipTime)
-            let trackAutomationGain = AutomationMath.trackVolumeAutomationGain(for: track, atTimelineTime: timelineTime)
-            let gain = Float(MixMath.clampClipGainLinear(clip.gain) * automationGain * fadeMultiplier * crossfadeMultiplier * trackGain * trackAutomationGain * masterGain)
-            let monoLeft = inData[0][i]
-            let monoRight = inChannels > 1 ? inData[1][i] : monoLeft
-            let leftSample = monoLeft * gain * leftPan
-            let rightSample = monoRight * gain * rightPan
-            let outIndex = outputStartFrame + i
-            if outIndex < Int(mixBuffer.frameLength) {
-                outData[0][outIndex] += leftSample
-                if outChannels > 1 { outData[1][outIndex] += rightSample }
-            }
+        let renderStart = chunkStart + Double(startFrame) / sampleRate
+        let source = try source(for: asset, url: url, sourceCache: sourceCache)
+        try source.mix(
+            clip: clip,
+            track: track,
+            project: project,
+            into: mixBuffer,
+            timelineStart: renderStart,
+            frameCount: AVAudioFrameCount(frameCount),
+            destinationOffset: startFrame
+        )
+    }
+
+    private func source(for asset: MediaAsset, url: URL, sourceCache: SourceCache) throws -> TimelineAudioSource {
+        if let source = sourceCache.sources[asset.id] {
+            return source
         }
+        let source = try TimelineAudioSource(url: url)
+        sourceCache.sources[asset.id] = source
+        return source
     }
 
     private func clampAndDetectClipping(in buffer: AVAudioPCMBuffer) -> Bool {
@@ -143,69 +272,201 @@ final class NativeAudioExportBackend: AudioExportBackend {
         return clipped
     }
 
+    private func applyMasterGain(_ volumeDB: Double, to buffer: AVAudioPCMBuffer) {
+        let gain = Float(MixMath.linearGain(forDB: MixMath.clampMasterVolumeDB(volumeDB)))
+        guard gain != 1, let data = buffer.floatChannelData else { return }
+        for channel in 0..<Int(buffer.format.channelCount) {
+            for frame in 0..<Int(buffer.frameLength) {
+                data[channel][frame] *= gain
+            }
+        }
+    }
+
 }
 
 final class ExternalEncoderExportBackend: AudioExportBackend {
     private let nativeBackend = NativeAudioExportBackend()
-    private var process: Process?
 
     static func availability(for format: ExportFormat) -> (available: Bool, reason: String?) {
         switch format {
         case .wav, .aiff:
             return (true, nil)
         case .m4a, .mp3, .flac:
-            // Compressed export is routed through an optional external encoder for now; native AAC can be added behind this abstraction later.
-            guard ExternalEncoderSettings.ffmpegPath != nil else {
-                return (false, "\(format.rawValue) export requires an external encoder. Configure FFmpeg in Preferences.")
+            guard let ffmpegPath = ExternalEncoderSettings.ffmpegPath,
+                  FileManager.default.isExecutableFile(atPath: ffmpegPath) else {
+                return (false, "\(format.rawValue) export requires a valid FFmpeg executable. Configure FFmpeg in Preferences.")
+            }
+            guard let encoders = ExternalEncoderSettings.audioEncoderNames(path: ffmpegPath) else {
+                return (false, "Could not read supported audio encoders from the configured FFmpeg binary.")
+            }
+            let requiredEncoder: String
+            switch format {
+            case .m4a: requiredEncoder = "aac"
+            case .mp3: requiredEncoder = "libmp3lame"
+            case .flac: requiredEncoder = "flac"
+            case .wav, .aiff: requiredEncoder = ""
+            }
+            guard encoders.contains(requiredEncoder) else {
+                return (false, "The configured FFmpeg binary does not include the \(requiredEncoder) audio encoder required for \(format.rawValue) export.")
             }
             return (true, nil)
         }
     }
 
-    func cancel() {
-        nativeBackend.cancel()
-        process?.terminate()
-    }
-
-    func export(project: Project, settings: ExportSettings, progress: @escaping (Double) -> Void) throws -> ExportResult {
-        guard let ffmpegPath = ExternalEncoderSettings.ffmpegPath,
-              FileManager.default.isExecutableFile(atPath: ffmpegPath) else {
-            throw NSError(domain: "LightAudio", code: 30, userInfo: [NSLocalizedDescriptionKey: "\(settings.format.rawValue) export requires an external encoder. Configure FFmpeg in Preferences."])
+    func export(project: Project, settings: ExportSettings, cancellationToken: ExportCancellationToken, progress: @escaping (Double) -> Void) throws -> ExportResult {
+        if cancellationToken.isCancelled { throw exportCancellationError() }
+        try settings.validate()
+        try validateExportDestination(settings.outputURL, for: project)
+        let availability = Self.availability(for: settings.format)
+        guard availability.available,
+              let ffmpegPath = ExternalEncoderSettings.ffmpegPath else {
+            throw NSError(domain: "LightAudio", code: 30, userInfo: [NSLocalizedDescriptionKey: availability.reason ?? "\(settings.format.rawValue) export requires an external encoder. Configure FFmpeg in Preferences."])
         }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-\(UUID().uuidString).wav")
         defer { try? FileManager.default.removeItem(at: tempURL) }
+        let outputTransaction = ExportOutputTransaction(destinationURL: settings.outputURL)
+        defer { outputTransaction.discard() }
 
         let renderSettings = ExportSettings(format: .wav, sampleRate: settings.sampleRate, channelCount: settings.channelCount, bitrate: nil, outputURL: tempURL, range: settings.range)
-        let result = try nativeBackend.export(project: project, settings: renderSettings) { value in
-            progress(value * 0.7)
+        let result = try nativeBackend.export(project: project, settings: renderSettings, cancellationToken: cancellationToken) { value in
+            DispatchQueue.main.async { progress(value * 0.7) }
         }
 
-        try runFFmpeg(path: ffmpegPath, inputURL: tempURL, settings: settings)
+        if cancellationToken.isCancelled { throw exportCancellationError() }
+        let stagedSettings = ExportSettings(format: settings.format, sampleRate: settings.sampleRate, channelCount: settings.channelCount, bitrate: settings.bitrate, outputURL: outputTransaction.stagingURL, range: settings.range)
+        DispatchQueue.main.async { progress(0.7) }
+        try runFFmpeg(
+            path: ffmpegPath,
+            inputURL: tempURL,
+            settings: stagedSettings,
+            duration: renderedDuration(for: project, settings: settings),
+            cancellationToken: cancellationToken
+        ) { value in
+            DispatchQueue.main.async { progress(0.7 + value * 0.3) }
+        }
+        if cancellationToken.isCancelled { throw exportCancellationError() }
+        try outputTransaction.commit(overwritingExisting: settings.overwriteExisting)
         DispatchQueue.main.async { progress(1) }
         return result
     }
 
-    private func runFFmpeg(path: String, inputURL: URL, settings: ExportSettings) throws {
+    private func runFFmpeg(
+        path: String,
+        inputURL: URL,
+        settings: ExportSettings,
+        duration: TimeInterval,
+        cancellationToken: ExportCancellationToken,
+        progress: @escaping (Double) -> Void
+    ) throws {
+        if cancellationToken.isCancelled { throw exportCancellationError() }
         let process = Process()
-        self.process = process
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = ffmpegArguments(inputURL: inputURL, settings: settings)
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        let progressPipe = Pipe()
+        let errorPipe = Pipe()
+        let errorLock = NSLock()
+        var errorData = Data()
+        let progressLock = NSLock()
+        var progressLineBuffer = ""
+        process.standardOutput = progressPipe
+        process.standardError = errorPipe
+
+        func consumeProgress(_ data: Data) {
+            guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
+            progressLock.lock()
+            progressLineBuffer.append(text)
+            let lines = progressLineBuffer.split(separator: "\n", omittingEmptySubsequences: false)
+            progressLineBuffer = String(lines.last ?? "")
+            let completedLines = lines.dropLast()
+            var latestFraction: Double?
+            for line in completedLines {
+                let pair = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                guard pair.count == 2,
+                      (pair[0] == "out_time_us" || pair[0] == "out_time_ms"),
+                      let microseconds = Double(pair[1]),
+                      duration > 0 else {
+                    continue
+                }
+                latestFraction = min(1, max(0, microseconds / 1_000_000 / duration))
+            }
+            progressLock.unlock()
+            if let latestFraction {
+                progress(latestFraction)
+            }
+        }
+
+        progressPipe.fileHandleForReading.readabilityHandler = { handle in
+            consumeProgress(handle.availableData)
+        }
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            errorLock.lock()
+            if errorData.count < 512 * 1024 {
+                errorData.append(data.prefix(512 * 1024 - errorData.count))
+            }
+            errorLock.unlock()
+        }
+        let cancellationHandlerID = cancellationToken.addCancellationHandler {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+        defer {
+            cancellationToken.removeCancellationHandler(cancellationHandlerID)
+            progressPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+            progressPipe.fileHandleForReading.closeFile()
+            errorPipe.fileHandleForReading.closeFile()
+        }
+        if cancellationToken.isCancelled { throw exportCancellationError() }
         try process.run()
+        let exportDeadline = Date().addingTimeInterval(ffmpegTimeout(for: duration))
+        var terminationRequestedAt: Date?
+        var forcedTerminationSent = false
+        var didTimeOut = false
+
+        while process.isRunning {
+            let now = Date()
+            if cancellationToken.isCancelled || now >= exportDeadline {
+                didTimeOut = didTimeOut || !cancellationToken.isCancelled
+                if terminationRequestedAt == nil {
+                    process.terminate()
+                    terminationRequestedAt = now
+                }
+            }
+            if let terminationRequestedAt,
+               !forcedTerminationSent,
+               now.timeIntervalSince(terminationRequestedAt) >= 0.5,
+               process.isRunning {
+                let processID = process.processIdentifier
+                if processID > 0 {
+                    _ = Darwin.kill(processID, SIGKILL)
+                }
+                forcedTerminationSent = true
+            }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
         process.waitUntilExit()
-        self.process = nil
+        if cancellationToken.isCancelled { throw exportCancellationError() }
+        if didTimeOut {
+            throw NSError(
+                domain: "LightAudioFFmpeg",
+                code: 31,
+                userInfo: [NSLocalizedDescriptionKey: "External encoder timed out. Check the configured FFmpeg binary and try again."]
+            )
+        }
         guard process.terminationStatus == 0 else {
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8) ?? "External encoder failed."
+            errorLock.lock()
+            let message = String(data: errorData, encoding: .utf8) ?? "External encoder failed."
+            errorLock.unlock()
             throw NSError(domain: "LightAudioFFmpeg", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: message])
         }
     }
 
     private func ffmpegArguments(inputURL: URL, settings: ExportSettings) -> [String] {
-        var args = ["-y", "-i", inputURL.path, "-ar", "\(Int(settings.sampleRate))", "-ac", "\(settings.channelCount)"]
+        var args = ["-y", "-nostdin", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats", "-i", inputURL.path, "-ar", "\(Int(settings.sampleRate))", "-ac", "\(settings.channelCount)"]
         switch settings.format {
         case .m4a:
             args += ["-c:a", "aac"]
@@ -221,21 +482,53 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
         args.append(settings.outputURL.path)
         return args
     }
+
+    private func ffmpegTimeout(for duration: TimeInterval) -> TimeInterval {
+        let safeDuration = duration.isFinite ? max(0, duration) : 0
+        return min(4 * 60 * 60, max(300, safeDuration * 12 + 120))
+    }
+
+    private func renderedDuration(for project: Project, settings: ExportSettings) -> TimeInterval {
+        switch settings.range {
+        case .entireProject:
+            return max(0, project.duration)
+        case .timeRange(let start, let end):
+            return max(0, abs(end - start))
+        }
+    }
 }
 
 final class ExportService {
-    private let nativeBackend = NativeAudioExportBackend()
-    private let externalBackend = ExternalEncoderExportBackend()
+    private let operationLock = NSLock()
+    private var activeCancellationToken: ExportCancellationToken?
+
+    var isExporting: Bool {
+        operationLock.lock()
+        defer { operationLock.unlock() }
+        return activeCancellationToken != nil
+    }
 
     func export(project: Project, settings: ExportSettings, progress: @escaping (Double) -> Void, completion: @escaping (Result<ExportResult, Error>) -> Void) {
+        let cancellationToken = ExportCancellationToken()
+        operationLock.lock()
+        let previousToken = activeCancellationToken
+        activeCancellationToken = cancellationToken
+        operationLock.unlock()
+        previousToken?.cancel()
+
         DispatchQueue.global(qos: .userInitiated).async {
+            defer { self.finish(cancellationToken) }
             do {
+                if cancellationToken.isCancelled { throw exportCancellationError() }
+                try settings.validate()
+                try validateExportDestination(settings.outputURL, for: project)
+                try self.validateProjectMedia(project)
                 let result: ExportResult
                 switch settings.format {
                 case .wav, .aiff:
-                    result = try self.nativeBackend.export(project: project, settings: settings, progress: progress)
+                    result = try NativeAudioExportBackend().export(project: project, settings: settings, cancellationToken: cancellationToken, progress: progress)
                 case .m4a, .mp3, .flac:
-                    result = try self.externalBackend.export(project: project, settings: settings, progress: progress)
+                    result = try ExternalEncoderExportBackend().export(project: project, settings: settings, cancellationToken: cancellationToken, progress: progress)
                 }
                 DispatchQueue.main.async { completion(.success(result)) }
             } catch {
@@ -245,7 +538,42 @@ final class ExportService {
     }
 
     func cancel() {
-        nativeBackend.cancel()
-        externalBackend.cancel()
+        operationLock.lock()
+        let token = activeCancellationToken
+        operationLock.unlock()
+        token?.cancel()
+    }
+
+    private func finish(_ cancellationToken: ExportCancellationToken) {
+        operationLock.lock()
+        if activeCancellationToken === cancellationToken {
+            activeCancellationToken = nil
+        }
+        operationLock.unlock()
+    }
+
+    private func validateProjectMedia(_ project: Project) throws {
+        let unavailableSources = project.assets.filter { asset in
+            guard !asset.isMissing, let sourceURL = asset.resolvedURL else { return true }
+            return !FileManager.default.fileExists(atPath: sourceURL.path)
+        }
+        guard unavailableSources.isEmpty else {
+            let names = unavailableSources.map { $0.metadata.fileName }.sorted().joined(separator: "\n")
+            throw NSError(domain: "LightAudio", code: 12, userInfo: [NSLocalizedDescriptionKey: "Relink missing media before exporting:\n\(names)"])
+        }
+
+        let unavailableProxies = TimelineRenderService().unavailableVideoProxyAssets(in: project)
+        guard unavailableProxies.isEmpty else {
+            let names = unavailableProxies.map { $0.metadata.fileName }.sorted().joined(separator: "\n")
+            throw NSError(domain: "LightAudio", code: 13, userInfo: [NSLocalizedDescriptionKey: "Finish generating or relink unavailable audio proxies before exporting:\n\(names)"])
+        }
+
+        let assetIDs = Set(project.assets.map(\.id))
+        let hasUnresolvedClip = project.timeline.tracks.contains { track in
+            track.clips.contains { !assetIDs.contains($0.sourceAssetID) }
+        }
+        guard !hasUnresolvedClip else {
+            throw NSError(domain: "LightAudio", code: 14, userInfo: [NSLocalizedDescriptionKey: "This project contains clips with unresolved media references."])
+        }
     }
 }

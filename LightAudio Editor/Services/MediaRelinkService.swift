@@ -4,6 +4,15 @@ struct RelinkResult {
     var accepted: Bool
     var reason: String
     var updatedAsset: MediaAsset?
+    var warnings: [String] = []
+
+    var requiresConfirmation: Bool {
+        accepted && !warnings.isEmpty
+    }
+
+    var isSafeForAutomaticRelink: Bool {
+        accepted && warnings.isEmpty
+    }
 }
 
 final class MediaRelinkService {
@@ -29,17 +38,27 @@ final class MediaRelinkService {
             if replacement.channelCount != asset.metadata.channelCount { warnings.append("channel count differs") }
             if replacement.fileSize != asset.metadata.fileSize { warnings.append("file size differs") }
             if replacement.fileName != asset.metadata.fileName { warnings.append("file name differs") }
+            if let expectedChecksum = asset.metadata.checksum,
+               let replacementChecksum = replacement.checksum,
+               expectedChecksum != replacementChecksum {
+                warnings.append("audio checksum differs")
+            }
 
             var updated = asset
             updated.originalPath = replacementURL.path
             updated.relativePath = resolver.relativePath(for: replacementURL, projectURL: projectURL)
+            updated.resolvedPath = replacementURL.standardizedFileURL.path
             updated.metadata = replacement
             updated.proxyPath = asset.kind == .videoAudio ? nil : updated.proxyPath
             updated.proxyCacheKey = asset.kind == .videoAudio ? nil : updated.proxyCacheKey
             updated.proxyFailureReason = nil
+            updated.sourceModificationTimestamp = resolver.sourceModificationTimestamp(for: replacementURL)
             updated.isMissing = false
-            let suffix = warnings.isEmpty ? "Relinked." : "Relinked with warnings: \(warnings.joined(separator: ", "))."
-            return RelinkResult(accepted: true, reason: suffix, updatedAsset: updated)
+            updated.waveformCacheKey = nil
+            let suffix = warnings.isEmpty
+                ? "Relinked."
+                : "Candidate needs confirmation: \(warnings.joined(separator: ", "))."
+            return RelinkResult(accepted: true, reason: suffix, updatedAsset: updated, warnings: warnings)
         } catch {
             return RelinkResult(accepted: false, reason: error.localizedDescription, updatedAsset: nil)
         }

@@ -42,10 +42,14 @@
 		BF0000010000000000000021 /* MediaProxyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001021 /* MediaProxyService.swift */; };
 		BF0000010000000000000022 /* ExternalEncoderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001022 /* ExternalEncoderSettings.swift */; };
 		BF0000010000000000000023 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001023 /* PreferencesWindowController.swift */; };
+		BF0000010000000000000025 /* ApplicationCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001025 /* ApplicationCacheService.swift */; };
+		BF0000010000000000000024 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001024 /* Assets.xcassets */; };
+		BF0000010000000000000026 /* P2RegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001026 /* P2RegressionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		BF0000010000000000002000 /* LightAudio Editor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LightAudio Editor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		BF0000010000000000002001 /* LightAudio EditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "LightAudio EditorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BF0000010000000000001000 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
 		BF0000010000000000001001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/AppDelegate.swift"; sourceTree = "<group>"; };
 		BF0000010000000000001002 /* MainWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App/MainWindowController.swift"; sourceTree = "<group>"; };
@@ -82,10 +86,24 @@
 		BF0000010000000000001021 /* MediaProxyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MediaProxyService.swift"; sourceTree = "<group>"; };
 		BF0000010000000000001022 /* ExternalEncoderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ExternalEncoderSettings.swift"; sourceTree = "<group>"; };
 		BF0000010000000000001023 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/PreferencesWindowController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001025 /* ApplicationCacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ApplicationCacheService.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001024 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		BF0000010000000000001026 /* P2RegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = P2RegressionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		BF000001000000000000B001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BF0000010000000000007000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BF0000010000000000006000;
+			remoteInfo = "LightAudio Editor";
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		BF0000010000000000003001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		BF0000010000000000003004 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -93,15 +111,25 @@
 			isa = PBXGroup;
 			children = (
 				BF0000010000000000005000 /* LightAudio Editor */,
+				BF0000010000000000004002 /* LightAudio EditorTests */,
 				BF0000010000000000004001 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		BF0000010000000000004001 /* Products */ = {isa = PBXGroup; children = (BF0000010000000000002000 /* LightAudio Editor.app */); name = Products; sourceTree = "<group>"; };
+		BF0000010000000000004001 /* Products */ = {isa = PBXGroup; children = (BF0000010000000000002000 /* LightAudio Editor.app */, BF0000010000000000002001 /* LightAudio EditorTests.xctest */); name = Products; sourceTree = "<group>"; };
+		BF0000010000000000004002 /* LightAudio EditorTests */ = {
+			isa = PBXGroup;
+			children = (
+				BF0000010000000000001026 /* P2RegressionTests.swift */,
+			);
+			path = "LightAudio EditorTests";
+			sourceTree = "<group>";
+		};
 		BF0000010000000000005000 /* LightAudio Editor */ = {
 			isa = PBXGroup;
 			children = (
 				BF0000010000000000001000 /* Info.plist */,
+				BF0000010000000000001024 /* Assets.xcassets */,
 				BF0000010000000000001001 /* AppDelegate.swift */,
 				BF0000010000000000001002 /* MainWindowController.swift */,
 				BF0000010000000000001003 /* ProjectController.swift */,
@@ -137,6 +165,7 @@
 				BF0000010000000000001021 /* MediaProxyService.swift */,
 				BF0000010000000000001022 /* ExternalEncoderSettings.swift */,
 				BF0000010000000000001023 /* PreferencesWindowController.swift */,
+				BF0000010000000000001025 /* ApplicationCacheService.swift */,
 			);
 			path = "LightAudio Editor";
 			sourceTree = "<group>";
@@ -159,6 +188,22 @@
 			productReference = BF0000010000000000002000 /* LightAudio Editor.app */;
 			productType = "com.apple.product-type.application";
 		};
+		BF0000010000000000006001 /* LightAudio EditorTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BF0000010000000000008002 /* Build configuration list for PBXNativeTarget "LightAudio EditorTests" */;
+			buildPhases = (
+				BF0000010000000000003005 /* Sources */,
+				BF0000010000000000003004 /* Frameworks */,
+			);
+			buildRules = ();
+			dependencies = (
+				BF000001000000000000A001 /* PBXTargetDependency */,
+			);
+			name = "LightAudio EditorTests";
+			productName = "LightAudio EditorTests";
+			productReference = BF0000010000000000002001 /* LightAudio EditorTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -177,12 +222,19 @@
 			productRefGroup = BF0000010000000000004001 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			targets = (BF0000010000000000006000 /* LightAudio Editor */);
+			targets = (BF0000010000000000006000 /* LightAudio Editor */, BF0000010000000000006001 /* LightAudio EditorTests */);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		BF0000010000000000003003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		BF0000010000000000003003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000010000000000000024 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -225,22 +277,41 @@
 				BF0000010000000000000021 /* MediaProxyService.swift in Sources */,
 				BF0000010000000000000022 /* ExternalEncoderSettings.swift in Sources */,
 				BF0000010000000000000023 /* PreferencesWindowController.swift in Sources */,
+				BF0000010000000000000025 /* ApplicationCacheService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BF0000010000000000003005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0000010000000000000026 /* P2RegressionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		BF000001000000000000A001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BF0000010000000000006000 /* LightAudio Editor */;
+			targetProxy = BF000001000000000000B001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		BF0000010000000000009000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				INFOPLIST_FILE = "LightAudio Editor/Info.plist";
@@ -257,6 +328,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -275,11 +347,44 @@
 		};
 		BF0000010000000000009002 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic;}; name = Debug; };
 		BF0000010000000000009003 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic;}; name = Release; };
+		BF0000010000000000009004 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				PRODUCT_BUNDLE_IDENTIFIER = com.local.LightAudioEditorTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LightAudio Editor.app/Contents/MacOS/LightAudio Editor";
+			};
+			name = Debug;
+		};
+		BF0000010000000000009005 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 10.15;
+				PRODUCT_BUNDLE_IDENTIFIER = com.local.LightAudioEditorTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LightAudio Editor.app/Contents/MacOS/LightAudio Editor";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
 		BF0000010000000000008000 /* Build configuration list for PBXProject "LightAudio Editor" */ = {isa = XCConfigurationList; buildConfigurations = (BF0000010000000000009002 /* Debug */, BF0000010000000000009003 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
 		BF0000010000000000008001 /* Build configuration list for PBXNativeTarget "LightAudio Editor" */ = {isa = XCConfigurationList; buildConfigurations = (BF0000010000000000009000 /* Debug */, BF0000010000000000009001 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		BF0000010000000000008002 /* Build configuration list for PBXNativeTarget "LightAudio EditorTests" */ = {isa = XCConfigurationList; buildConfigurations = (BF0000010000000000009004 /* Debug */, BF0000010000000000009005 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
 /* End XCConfigurationList section */
 	};
 	rootObject = BF0000010000000000007000 /* Project object */;

@@ -360,6 +360,10 @@ enum AutomationMath {
         interpolatedDB(keyframes: clip.volumeAutomationKeyframes, time: time, defaultDB: 0)
     }
 
+    static func panAutomation(for clip: Clip, atClipTime time: TimeInterval) -> Double {
+        interpolatedPan(keyframes: clip.panAutomationKeyframes, time: time, defaultPan: 0)
+    }
+
     static func trackVolumeAutomationGain(for track: Track, atTimelineTime time: TimeInterval) -> Double {
         MixMath.linearGain(forDB: trackVolumeAutomationDB(for: track, atTimelineTime: time))
     }
@@ -369,39 +373,65 @@ enum AutomationMath {
     }
 
     private static func interpolatedDB(keyframes: [ClipVolumeAutomationKeyframe], time: TimeInterval, defaultDB: Double) -> Double {
-        let sorted = keyframes.map { $0.clamped(maxTime: .greatestFiniteMagnitude) }.sorted { $0.time < $1.time }
-        guard let first = sorted.first else { return defaultDB }
-        guard sorted.count > 1 else { return first.gainDB }
+        guard let first = keyframes.first else { return defaultDB }
+        guard keyframes.count > 1 else { return first.gainDB }
         let clampedTime = max(0, time)
         if clampedTime <= first.time { return first.gainDB }
-        if let last = sorted.last, clampedTime >= last.time { return last.gainDB }
-        for index in 0..<(sorted.count - 1) {
-            let left = sorted[index]
-            let right = sorted[index + 1]
-            guard clampedTime >= left.time && clampedTime <= right.time else { continue }
-            let span = max(0.000001, right.time - left.time)
-            let fraction = (clampedTime - left.time) / span
-            return left.gainDB + (right.gainDB - left.gainDB) * fraction
-        }
-        return defaultDB
+        if let last = keyframes.last, clampedTime >= last.time { return last.gainDB }
+        let indexes = surroundingIndexes(in: keyframes, time: clampedTime) { $0.time }
+        let left = keyframes[indexes.left]
+        let right = keyframes[indexes.right]
+        let span = max(0.000001, right.time - left.time)
+        let fraction = (clampedTime - left.time) / span
+        return left.gainDB + (right.gainDB - left.gainDB) * fraction
     }
 
     private static func interpolatedDB(keyframes: [TrackVolumeAutomationKeyframe], time: TimeInterval, defaultDB: Double) -> Double {
-        let sorted = keyframes.map { $0.clamped() }.sorted { $0.time < $1.time }
-        guard let first = sorted.first else { return defaultDB }
-        guard sorted.count > 1 else { return first.gainDB }
+        guard let first = keyframes.first else { return defaultDB }
+        guard keyframes.count > 1 else { return first.gainDB }
         let clampedTime = max(0, time)
         if clampedTime <= first.time { return first.gainDB }
-        if let last = sorted.last, clampedTime >= last.time { return last.gainDB }
-        for index in 0..<(sorted.count - 1) {
-            let left = sorted[index]
-            let right = sorted[index + 1]
-            guard clampedTime >= left.time && clampedTime <= right.time else { continue }
-            let span = max(0.000001, right.time - left.time)
-            let fraction = (clampedTime - left.time) / span
-            return left.gainDB + (right.gainDB - left.gainDB) * fraction
+        if let last = keyframes.last, clampedTime >= last.time { return last.gainDB }
+        let indexes = surroundingIndexes(in: keyframes, time: clampedTime) { $0.time }
+        let left = keyframes[indexes.left]
+        let right = keyframes[indexes.right]
+        let span = max(0.000001, right.time - left.time)
+        let fraction = (clampedTime - left.time) / span
+        return left.gainDB + (right.gainDB - left.gainDB) * fraction
+    }
+
+    private static func interpolatedPan(keyframes: [ClipPanAutomationKeyframe], time: TimeInterval, defaultPan: Double) -> Double {
+        guard let first = keyframes.first else { return MixMath.clampPanPercent(defaultPan) }
+        guard keyframes.count > 1 else { return MixMath.clampPanPercent(first.pan) }
+        let clampedTime = max(0, time)
+        if clampedTime <= first.time { return MixMath.clampPanPercent(first.pan) }
+        if let last = keyframes.last, clampedTime >= last.time { return MixMath.clampPanPercent(last.pan) }
+        let indexes = surroundingIndexes(in: keyframes, time: clampedTime) { $0.time }
+        let left = keyframes[indexes.left]
+        let right = keyframes[indexes.right]
+        let span = max(0.000001, right.time - left.time)
+        let fraction = (clampedTime - left.time) / span
+        return MixMath.clampPanPercent(left.pan + (right.pan - left.pan) * fraction)
+    }
+
+    /// Keyframes are maintained in sorted order. Binary search avoids re-walking an entire
+    /// envelope for every rendered audio sample.
+    private static func surroundingIndexes<T>(
+        in keyframes: [T],
+        time: TimeInterval,
+        keyframeTime: (T) -> TimeInterval
+    ) -> (left: Int, right: Int) {
+        var left = 0
+        var right = keyframes.count - 1
+        while left + 1 < right {
+            let middle = (left + right) / 2
+            if keyframeTime(keyframes[middle]) <= time {
+                left = middle
+            } else {
+                right = middle
+            }
         }
-        return defaultDB
+        return (left, right)
     }
 }
 
@@ -423,16 +453,19 @@ enum FadeMath {
     }
 
     static func crossfadeGain(for clipID: UUID, timelineTime: TimeInterval, timeline: Timeline) -> Double {
-        var gain = 1.0
-        for crossfade in timeline.crossfades where crossfade.contains(clipID: clipID, timelineTime: timelineTime) && crossfade.duration > 0 {
-            let progress = min(1, max(0, (timelineTime - crossfade.startTime) / crossfade.duration))
-            if clipID == crossfade.leadingClipID {
-                gain *= crossfadeGain(progress: 1 - progress, curve: crossfade.curve)
-            } else if clipID == crossfade.trailingClipID {
-                gain *= crossfadeGain(progress: progress, curve: crossfade.curve)
-            }
+        guard let crossfade = timeline.crossfades.first(where: {
+            $0.contains(clipID: clipID, timelineTime: timelineTime) && $0.duration > 0
+        }) else {
+            return 1
         }
-        return gain
+        let progress = min(1, max(0, (timelineTime - crossfade.startTime) / crossfade.duration))
+        if clipID == crossfade.leadingClipID {
+            return crossfadeGain(progress: 1 - progress, curve: crossfade.curve)
+        }
+        if clipID == crossfade.trailingClipID {
+            return crossfadeGain(progress: progress, curve: crossfade.curve)
+        }
+        return 1
     }
 
     static func curveGain(progress: Double, curve: FadeCurve) -> Double {
