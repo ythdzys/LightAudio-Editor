@@ -8,27 +8,53 @@
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleDisplayName</key>
+	<string>LightAudio Editor</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>LightAudio Editor Project</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.ythdzys.LightAudioEditor.project</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>10.15</string>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>LSMinimumSystemVersionByArchitecture</key>
+	<dict>
+		<key>arm64</key>
+		<string>11.0</string>
+		<key>x86_64</key>
+		<string>10.15</string>
+	</dict>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string></string>
+	<string>Copyright © 2026 ythdzys. All rights reserved.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.lightaudio.project</string>
+			<string>com.ythdzys.LightAudioEditor.project</string>
 			<key>UTTypeDescription</key>
 			<string>LightAudio Editor Project</string>
 			<key>UTTypeConformsTo</key>

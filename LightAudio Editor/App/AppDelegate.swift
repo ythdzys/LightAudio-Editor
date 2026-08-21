@@ -10,11 +10,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hasCheckedForRecovery = false
     private var recoverySessionStarted = false
     private var terminationReplyPending = false
+    private var hasFinishedLaunching = false
+    private var pendingProjectURL: URL?
+    private var recoveryCheckInProgress = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
         NSApp.setActivationPolicy(.regular)
+        hasFinishedLaunching = true
         showMainWindow()
+        checkForRecoveryThenOpenPendingProject()
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.ensureMainWindowVisible()
@@ -33,14 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.window?.center()
         controller.window?.makeKeyAndOrderFront(self)
         controller.window?.orderFrontRegardless()
-        if !hasCheckedForRecovery {
-            hasCheckedForRecovery = true
-            crashRecoveryController?.checkForRecovery(presenter: controller.window, openSaved: { url in
-                projectController.open(url: url)
-            }) { snapshot in
-                projectController.restore(snapshot: snapshot)
-            }
-        }
         if !recoverySessionStarted {
             recoverySessionStarted = true
             recoveryService.markSessionStarted()
@@ -90,11 +87,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        let projectURLs = filenames
+            .map { URL(fileURLWithPath: $0).standardizedFileURL }
+            .filter { $0.pathExtension.lowercased() == "liau" }
+        guard let projectURL = projectURLs.first else {
+            sender.reply(toOpenOrPrint: .failure)
+            return
+        }
+
+        pendingProjectURL = projectURL
+        sender.reply(toOpenOrPrint: projectURLs.count == filenames.count ? .success : .failure)
+        if hasFinishedLaunching {
+            showMainWindow()
+            openPendingProjectIfNeeded()
+        }
+    }
+
+    private func checkForRecoveryThenOpenPendingProject() {
+        guard !hasCheckedForRecovery else {
+            openPendingProjectIfNeeded()
+            return
+        }
+        hasCheckedForRecovery = true
+        guard let controller = projectController,
+              let recoveryController = crashRecoveryController else {
+            openPendingProjectIfNeeded()
+            return
+        }
+        recoveryCheckInProgress = true
+        recoveryController.checkForRecovery(
+            presenter: mainWindowController?.window,
+            openSaved: { url in controller.open(url: url) },
+            restore: { snapshot in controller.restore(snapshot: snapshot) },
+            completion: { [weak self] in
+                self?.recoveryCheckInProgress = false
+                self?.openPendingProjectIfNeeded()
+            }
+        )
+    }
+
+    private func openPendingProjectIfNeeded() {
+        guard hasFinishedLaunching, !recoveryCheckInProgress, let url = pendingProjectURL else { return }
+        pendingProjectURL = nil
+        mainWindowController?.openProject(at: url)
+    }
+
     private func buildMenu() {
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
+        let aboutItem = appMenu.addItem(
+            withTitle: "About LightAudio Editor",
+            action: #selector(showAbout(_:)),
+            keyEquivalent: ""
+        )
+        aboutItem.target = self
+        appMenu.addItem(.separator())
         let preferencesItem = appMenu.addItem(withTitle: "Preferences...", action: #selector(showPreferences(_:)), keyEquivalent: ",")
         preferencesItem.target = self
         appMenu.addItem(.separator())
@@ -243,6 +293,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func jumpToNextMarker(_ sender: Any?) { mainWindowController?.jumpToNextMarker(sender) }
     @objc private func jumpToPreviousClipEdge(_ sender: Any?) { mainWindowController?.jumpToPreviousClipEdge(sender) }
     @objc private func jumpToNextClipEdge(_ sender: Any?) { mainWindowController?.jumpToNextClipEdge(sender) }
+
+    @objc private func showAbout(_ sender: Any?) {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "Unknown"
+        let build = info["CFBundleVersion"] as? String ?? "Unknown"
+        let credits = NSAttributedString(
+            string: "Lightweight, non-destructive multitrack audio editing for macOS.",
+            attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)]
+        )
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .version: "Version \(version) (\(build))",
+            .credits: credits
+        ])
+    }
 
     @objc private func showPreferences(_ sender: Any?) {
         let controller = preferencesWindowController ?? PreferencesWindowController { [weak self] completion in

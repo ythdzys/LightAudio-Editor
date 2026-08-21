@@ -10,7 +10,6 @@ final class ExportPanelController: NSWindowController {
     private let sampleRatePopup = NSPopUpButton()
     private let channelsPopup = NSPopUpButton()
     private let bitratePopup = NSPopUpButton()
-    private let normalizeCheckbox = NSButton(checkboxWithTitle: "Normalize peak to -1 dB", target: nil, action: nil)
     private let outputField = NSTextField(labelWithString: "")
     private let availabilityLabel = NSTextField(labelWithString: "")
     private let exportButton = NSButton(title: "Export", target: nil, action: nil)
@@ -28,7 +27,7 @@ final class ExportPanelController: NSWindowController {
     private init(project: Project, completion: @escaping (ExportSettings) -> Void) {
         self.project = project
         self.completion = completion
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 360), styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 330), styleMask: [.titled], backing: .buffered, defer: false)
         window.title = "Export Audio"
         super.init(window: window)
         setup()
@@ -56,9 +55,6 @@ final class ExportPanelController: NSWindowController {
         channelsPopup.addItems(withTitles: ["Project default", "Mono", "Stereo"])
         bitratePopup.addItems(withTitles: ["128 kbps", "192 kbps", "256 kbps", "320 kbps"])
         bitratePopup.selectItem(withTitle: "256 kbps")
-        // TODO: Wire this to a two-pass render path so normalization never mutates project gain values.
-        normalizeCheckbox.isEnabled = false
-        normalizeCheckbox.toolTip = "Normalize-on-export will be wired into the render backend in a later pass."
         outputURL = defaultOutputURL(for: .wav)
         outputField.stringValue = outputURL?.path ?? ""
 
@@ -71,7 +67,6 @@ final class ExportPanelController: NSWindowController {
         addRow(to: grid, label: "Sample rate", view: sampleRatePopup)
         addRow(to: grid, label: "Channels", view: channelsPopup)
         addRow(to: grid, label: "Bitrate", view: bitratePopup)
-        addRow(to: grid, label: "Normalize", view: normalizeCheckbox)
         addRow(to: grid, label: "Output", view: outputField, trailing: browse)
         addRow(to: grid, label: "Availability", view: availabilityLabel)
 

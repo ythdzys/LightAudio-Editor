@@ -57,18 +57,6 @@ final class AutosaveRecoveryService {
         }
     }
 
-    func latestSnapshot() -> (URL, ProjectRecoverySnapshot)? {
-        guard let files = try? FileManager.default.contentsOfDirectory(at: recoveryDirectory, includingPropertiesForKeys: [.contentModificationDateKey]) else {
-            return nil
-        }
-        return files.compactMap { url -> (URL, ProjectRecoverySnapshot)? in
-            guard let snapshot = try? fileService.decodeRecovery(from: url) else { return nil }
-            return (url, snapshot)
-        }
-        .sorted { $0.1.createdAt > $1.1.createdAt }
-        .first
-    }
-
     func latestRecoverableSnapshot() -> (URL, ProjectRecoverySnapshot)? {
         var metadata = loadMetadata()
 

@@ -472,11 +472,22 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             panel.allowedFileTypes = ["liau"]
             panel.beginSheetModal(for: self.window!) { [weak self] response in
                 guard response == .OK, let url = panel.url else { return }
-                self?.playbackEngine.stop()
-                self?.projectController.open(url: url)
-                self?.showStatus("Project opened")
+                self?.openProjectWithoutConfirmation(at: url)
             }
         }
+    }
+
+    func openProject(at url: URL) {
+        confirmDiscardChanges { [weak self] in
+            self?.openProjectWithoutConfirmation(at: url)
+        }
+    }
+
+    private func openProjectWithoutConfirmation(at url: URL) {
+        cancelPendingPlaybackRefresh()
+        playbackEngine.stop()
+        projectController.open(url: url)
+        showStatus("Project opened")
     }
 
     @objc func saveProject(_ sender: Any?) {
@@ -1467,6 +1478,8 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
     private func updateWindowTitle() {
         window?.title = projectController.isDirty ? "LightAudio Editor - \(projectController.project.name) *" : "LightAudio Editor - \(projectController.project.name)"
+        window?.representedURL = projectController.projectURL
+        window?.isDocumentEdited = projectController.isDirty
     }
 
     private func updateToolbarLabels() {

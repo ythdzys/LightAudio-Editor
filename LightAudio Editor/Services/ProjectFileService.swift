@@ -16,6 +16,7 @@ final class ProjectFileService {
     @discardableResult
     func save(_ project: Project, to url: URL) throws -> Project {
         var copy = project
+        copy.formatVersion = Project.currentFormatVersion
         copy.lastSavedAt = Date()
         let data = try encoder.encode(copy)
         try data.write(to: url, options: .atomic)
@@ -47,6 +48,16 @@ final class ProjectFileService {
     }
 
     private func validateStructure(of project: inout Project) throws {
+        guard project.formatVersion >= Project.minimumSupportedFormatVersion else {
+            throw ProjectFileValidationError("The project uses an obsolete format version (\(project.formatVersion)).")
+        }
+        guard project.formatVersion <= Project.currentFormatVersion else {
+            throw ProjectFileValidationError(
+                "This project was created by a newer version of LightAudio Editor (format \(project.formatVersion)). Update the app before opening it."
+            )
+        }
+        project.formatVersion = Project.currentFormatVersion
+
         guard project.sampleRate.isFinite, project.sampleRate > 0 else {
             throw ProjectFileValidationError("The project sample rate is invalid.")
         }

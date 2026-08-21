@@ -93,9 +93,15 @@ final class MediaProxyService {
         }
     }
 
-    private var proxyDirectory: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return base.appendingPathComponent("LightAudio Editor/Media Proxies", isDirectory: true)
+    private let proxyDirectory: URL
+
+    init(proxyDirectory: URL? = nil) {
+        if let proxyDirectory {
+            self.proxyDirectory = proxyDirectory
+        } else {
+            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            self.proxyDirectory = base.appendingPathComponent("LightAudio Editor/Media Proxies", isDirectory: true)
+        }
     }
 
     func cacheKey(for asset: MediaAsset, sourceURL: URL) -> String {

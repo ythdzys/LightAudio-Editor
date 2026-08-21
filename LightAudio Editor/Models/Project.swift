@@ -1,6 +1,10 @@
 import Foundation
 
 struct Project: Codable {
+    static let currentFormatVersion = 1
+    static let minimumSupportedFormatVersion = 1
+
+    var formatVersion: Int
     var id: UUID = UUID()
     var name: String
     var sampleRate: Double
@@ -12,6 +16,7 @@ struct Project: Codable {
     var lastSavedAt: Date?
 
     enum CodingKeys: String, CodingKey {
+        case formatVersion
         case id
         case name
         case sampleRate
@@ -36,7 +41,8 @@ struct Project: Codable {
         )
     }
 
-    init(id: UUID = UUID(), name: String, sampleRate: Double, duration: TimeInterval, assets: [MediaAsset], timeline: Timeline, mixState: MixState = MixState(), viewState: TimelineViewState, lastSavedAt: Date?) {
+    init(formatVersion: Int = Project.currentFormatVersion, id: UUID = UUID(), name: String, sampleRate: Double, duration: TimeInterval, assets: [MediaAsset], timeline: Timeline, mixState: MixState = MixState(), viewState: TimelineViewState, lastSavedAt: Date?) {
+        self.formatVersion = formatVersion
         self.id = id
         self.name = name
         self.sampleRate = sampleRate
@@ -50,6 +56,9 @@ struct Project: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Projects written before Beta 1 had no explicit schema marker. Their structure is the
+        // version 1 schema, so treating a missing value as 1 preserves those existing files.
+        formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try container.decode(String.self, forKey: .name)
         sampleRate = try container.decodeIfPresent(Double.self, forKey: .sampleRate) ?? 44100

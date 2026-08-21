@@ -7,8 +7,16 @@ final class CrashRecoveryController {
         self.recoveryService = recoveryService
     }
 
-    func checkForRecovery(presenter: NSWindow?, openSaved: @escaping (URL) -> Void, restore: @escaping (ProjectRecoverySnapshot) -> Void) {
-        guard let (url, snapshot) = recoveryService.latestRecoverableSnapshot() else { return }
+    func checkForRecovery(
+        presenter: NSWindow?,
+        openSaved: @escaping (URL) -> Void,
+        restore: @escaping (ProjectRecoverySnapshot) -> Void,
+        completion: @escaping () -> Void = {}
+    ) {
+        guard let (url, snapshot) = recoveryService.latestRecoverableSnapshot() else {
+            completion()
+            return
+        }
         let canOpenLastSaved = snapshot.originalProjectURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
         recoveryService.markSnapshotPending(url: url, snapshot: snapshot)
 
@@ -29,6 +37,7 @@ final class CrashRecoveryController {
             }
             self?.recoveryService.markSnapshotConsumed(url: url, snapshot: snapshot)
             self?.recoveryService.removeSnapshot(at: url)
+            completion()
         }
     }
 }

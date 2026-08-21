@@ -77,10 +77,6 @@ final class AudioPlaybackEngine {
         return current
     }
 
-    var hasReachedEnd: Bool {
-        isPlaying && currentTime >= endTime
-    }
-
     /// Returns actual post-mix peaks collected by mixer taps since the previous read.
     func takeMeterSnapshot() -> PlaybackMeterSnapshot {
         meterLock.lock()

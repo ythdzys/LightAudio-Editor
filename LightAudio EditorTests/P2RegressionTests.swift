@@ -158,6 +158,55 @@ final class P2RegressionTests: XCTestCase {
         XCTAssertThrowsError(try fileService.load(from: projectURL))
     }
 
+    func testProjectSaveWritesCurrentFormatVersion() throws {
+        let projectURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LightAudio-Versioned-\(UUID().uuidString).liau")
+        defer { try? FileManager.default.removeItem(at: projectURL) }
+
+        try ProjectFileService().save(Project.empty(), to: projectURL)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: projectURL)) as? [String: Any]
+        )
+
+        XCTAssertEqual(object["formatVersion"] as? Int, Project.currentFormatVersion)
+    }
+
+    func testLegacyUnversionedProjectMigratesToFormatVersionOne() throws {
+        let projectURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LightAudio-Legacy-\(UUID().uuidString).liau")
+        defer { try? FileManager.default.removeItem(at: projectURL) }
+
+        try ProjectFileService().save(Project.empty(), to: projectURL)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: projectURL)) as? [String: Any]
+        )
+        object.removeValue(forKey: "formatVersion")
+        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            .write(to: projectURL, options: .atomic)
+
+        let (loaded, missing) = try ProjectFileService().load(from: projectURL)
+        XCTAssertEqual(loaded.formatVersion, Project.currentFormatVersion)
+        XCTAssertTrue(missing.isEmpty)
+    }
+
+    func testProjectLoadRejectsNewerFormatVersion() throws {
+        let projectURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LightAudio-Future-\(UUID().uuidString).liau")
+        defer { try? FileManager.default.removeItem(at: projectURL) }
+
+        try ProjectFileService().save(Project.empty(), to: projectURL)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: projectURL)) as? [String: Any]
+        )
+        object["formatVersion"] = Project.currentFormatVersion + 1
+        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            .write(to: projectURL, options: .atomic)
+
+        XCTAssertThrowsError(try ProjectFileService().load(from: projectURL)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("newer version"))
+        }
+    }
+
     func testTimelineRendererAppliesClipPanAutomation() throws {
         let sourceURL = try makeMonoSourceFile(sample: 0.5, duration: 1)
         defer { try? FileManager.default.removeItem(at: sourceURL) }
@@ -833,6 +882,79 @@ final class P2RegressionTests: XCTestCase {
         XCTAssertGreaterThan(data[0][256], 0.1)
     }
 
+    func testTimelineRendererKeepsResamplingContinuousAcrossChunks() throws {
+        let sourceURL = try makeSineSourceFile(frequency: 10_000, duration: 1, sampleRate: 48_000)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        let outputFormat = try XCTUnwrap(
+            AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44_100, channels: 1, interleaved: false)
+        )
+        let clip = Clip(sourceAssetID: UUID(), timelineStart: 0, sourceStart: 0, sourceEnd: 1)
+        let track = Track(name: "A1")
+        let project = Project.empty()
+        let chunkFrames: AVAudioFrameCount = 4_096
+
+        let referenceSource = try TimelineAudioSource(url: sourceURL)
+        let reference = try XCTUnwrap(referenceSource.renderClip(
+            clip: clip,
+            track: track,
+            project: project,
+            timelineStart: 0,
+            frameCount: chunkFrames * 2,
+            outputFormat: outputFormat
+        ))
+
+        let chunkedSource = try TimelineAudioSource(url: sourceURL)
+        let first = try XCTUnwrap(chunkedSource.renderClip(
+            clip: clip,
+            track: track,
+            project: project,
+            timelineStart: 0,
+            frameCount: chunkFrames,
+            outputFormat: outputFormat
+        ))
+        let second = try XCTUnwrap(chunkedSource.renderClip(
+            clip: clip,
+            track: track,
+            project: project,
+            timelineStart: Double(chunkFrames) / outputFormat.sampleRate,
+            frameCount: chunkFrames,
+            outputFormat: outputFormat
+        ))
+
+        let referenceData = try XCTUnwrap(reference.floatChannelData)[0]
+        let firstData = try XCTUnwrap(first.floatChannelData)[0]
+        let secondData = try XCTUnwrap(second.floatChannelData)[0]
+        var maximumDifference: Float = 0
+        for frame in 0..<Int(chunkFrames) {
+            maximumDifference = max(maximumDifference, abs(firstData[frame] - referenceData[frame]))
+            maximumDifference = max(maximumDifference, abs(secondData[frame] - referenceData[Int(chunkFrames) + frame]))
+        }
+        XCTAssertLessThan(maximumDifference, 0.002)
+    }
+
+    func testTimelineRendererUsesChannelLayoutWhenDownmixingSurroundAudio() throws {
+        let sourceURL = try makeSurroundCenterSourceFile(sample: 0.5, duration: 0.1, sampleRate: 48_000)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        let outputFormat = try XCTUnwrap(
+            AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: false)
+        )
+        let source = try TimelineAudioSource(url: sourceURL)
+        let clip = Clip(sourceAssetID: UUID(), timelineStart: 0, sourceStart: 0, sourceEnd: 0.1)
+        let buffer = try XCTUnwrap(source.renderClip(
+            clip: clip,
+            track: Track(name: "A1"),
+            project: Project.empty(),
+            timelineStart: 0,
+            frameCount: 1_024,
+            outputFormat: outputFormat
+        ))
+        let data = try XCTUnwrap(buffer.floatChannelData)
+        XCTAssertGreaterThan(data[0][256], 0.2)
+        XCTAssertEqual(data[0][256], data[1][256], accuracy: 0.01)
+    }
+
     func testClipboardDoesNotCrossProjectBoundaries() throws {
         let sourceURL = try makeMonoSourceFile(sample: 0.5, duration: 1)
         let projectURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-Clipboard-\(UUID().uuidString).liau")
@@ -1355,6 +1477,76 @@ final class P2RegressionTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: unrelatedURL), originalData)
     }
 
+    func testProjectOpenRestoresTheManagedPathForAnExistingVideoProxy() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LightAudio-ProxyRestore-\(UUID().uuidString)", isDirectory: true)
+        let proxyDirectory = workspaceURL.appendingPathComponent("Proxies", isDirectory: true)
+        let recoveryDirectory = workspaceURL.appendingPathComponent("Recovery", isDirectory: true)
+        let projectURL = workspaceURL.appendingPathComponent("Proxy Restore.liau")
+        let sourceURL = try makeMonoSourceFile(sample: 0.25, duration: 0.1)
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+            try? FileManager.default.removeItem(at: sourceURL)
+        }
+        try FileManager.default.createDirectory(at: proxyDirectory, withIntermediateDirectories: true)
+
+        var asset = MediaAsset(
+            displayName: "Video Audio",
+            originalPath: sourceURL.path,
+            relativePath: nil,
+            resolvedPath: sourceURL.path,
+            kind: .videoAudio,
+            metadata: MediaFileMetadata(
+                fileName: "source.mov",
+                fileSize: nil,
+                duration: 0.1,
+                sampleRate: 44_100,
+                channelCount: 1,
+                checksum: nil
+            ),
+            waveformCacheKey: nil,
+            proxyPath: nil,
+            proxyCacheKey: nil,
+            proxyStatus: .none
+        )
+        let proxyService = MediaProxyService(proxyDirectory: proxyDirectory)
+        let proxyKey = proxyService.cacheKey(for: asset, sourceURL: sourceURL)
+        let expectedProxyURL = proxyDirectory.appendingPathComponent("\(proxyKey).m4a")
+        try FileManager.default.copyItem(at: sourceURL, to: expectedProxyURL)
+        asset.resolvedPath = nil
+
+        let project = Project(
+            name: "Proxy Restore",
+            sampleRate: 44_100,
+            duration: 0,
+            assets: [asset],
+            timeline: Timeline(tracks: [Track(name: "A1")]),
+            viewState: TimelineViewState(),
+            lastSavedAt: nil
+        )
+        try ProjectFileService().save(project, to: projectURL)
+
+        let recoveryService = AutosaveRecoveryService(recoveryDirectory: recoveryDirectory)
+        defer { recoveryService.stop() }
+        let controller = ProjectController(
+            recoveryService: recoveryService,
+            proxyService: proxyService,
+            undoManagerProvider: { nil }
+        )
+        controller.open(url: projectURL)
+
+        let restored = expectation(description: "Existing proxy path restored")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let openedAsset = controller.project.assets.first
+            XCTAssertEqual(openedAsset?.proxyPath, expectedProxyURL.path)
+            XCTAssertEqual(openedAsset?.proxyCacheKey, proxyKey)
+            XCTAssertEqual(openedAsset?.proxyStatus, .ready)
+            XCTAssertEqual(openedAsset?.audioSourceURL, expectedProxyURL)
+            restored.fulfill()
+        }
+        wait(for: [restored], timeout: 3)
+    }
+
     private func importAsset(from sourceURL: URL, into controller: ProjectController) throws -> MediaAsset {
         let imported = expectation(description: "Import source media")
         var result: Result<MediaAsset, Error>?
@@ -1390,5 +1582,43 @@ final class P2RegressionTests: XCTestCase {
             data[0][frame] = sample
         }
         try file.write(from: buffer)
+    }
+
+    private func makeSineSourceFile(frequency: Double, duration: TimeInterval, sampleRate: Double) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-Sine-\(UUID().uuidString).caf")
+        let format = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false))
+        let frameCount = AVAudioFrameCount((duration * sampleRate).rounded())
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
+        buffer.frameLength = frameCount
+        let data = try XCTUnwrap(buffer.floatChannelData)[0]
+        for frame in 0..<Int(frameCount) {
+            data[frame] = Float(sin(2 * Double.pi * frequency * Double(frame) / sampleRate) * 0.5)
+        }
+        try file.write(from: buffer)
+        return url
+    }
+
+    private func makeSurroundCenterSourceFile(sample: Float, duration: TimeInterval, sampleRate: Double) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-Surround-\(UUID().uuidString).caf")
+        let layout = try XCTUnwrap(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_MPEG_5_1_A))
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            interleaved: false,
+            channelLayout: layout
+        ))
+        let frameCount = AVAudioFrameCount((duration * sampleRate).rounded())
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
+        buffer.frameLength = frameCount
+        let data = try XCTUnwrap(buffer.floatChannelData)
+        for channel in 0..<Int(format.channelCount) {
+            for frame in 0..<Int(frameCount) {
+                data[channel][frame] = channel == 2 ? sample : 0
+            }
+        }
+        try file.write(from: buffer)
+        return url
     }
 }

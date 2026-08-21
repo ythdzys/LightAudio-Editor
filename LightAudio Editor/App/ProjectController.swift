@@ -56,7 +56,7 @@ final class ProjectController {
     private let importService = MediaImportService()
     private let relinkService = MediaRelinkService()
     private let resolver = FileReferenceResolver()
-    private let proxyService = MediaProxyService()
+    private let proxyService: MediaProxyService
     private let applicationCacheService = ApplicationCacheService()
     private let recoveryService: AutosaveRecoveryService
     private let waveformService = WaveformAnalysisService()
@@ -86,10 +86,6 @@ final class ProjectController {
     private(set) var isDirty = false
     private(set) var audioRenderRevision = 0
     private var clipClipboard: ClipClipboard?
-    var canEditTimeline: Bool {
-        !project.hasMissingAssets
-    }
-
     /// Rechecks source files that may have moved or been removed since the project was opened.
     /// This updates only transient availability state; it does not mark the project as edited.
     @discardableResult
@@ -118,9 +114,11 @@ final class ProjectController {
 
     init(
         recoveryService: AutosaveRecoveryService,
+        proxyService: MediaProxyService = MediaProxyService(),
         undoManagerProvider: @escaping () -> UndoManager? = { NSApp.mainWindow?.undoManager }
     ) {
         self.recoveryService = recoveryService
+        self.proxyService = proxyService
         self.undoManagerProvider = undoManagerProvider
         recoveryService.projectProvider = { [weak self] in self?.project }
         recoveryService.isDirtyProvider = { [weak self] in self?.isDirty ?? false }
@@ -1293,21 +1291,6 @@ final class ProjectController {
         }
     }
 
-    func regenerateMediaCaches(assetID: UUID) {
-        guard let index = project.assets.firstIndex(where: { $0.id == assetID }) else { return }
-        cancelProxyGeneration(for: assetID)
-        waveformData.removeValue(forKey: assetID)
-        project.assets[index].waveformStatus = project.assets[index].kind == .videoAudio ? .notGenerated : .generating
-        if project.assets[index].kind == .videoAudio {
-            proxyService.invalidateProxy(for: project.assets[index])
-            project.assets[index].proxyPath = nil
-            project.assets[index].proxyCacheKey = nil
-            project.assets[index].proxyStatus = .generating
-        }
-        notify(audioChanged: true)
-        prepareAsset(assetID)
-    }
-
     func regenerateWaveform(assetID: UUID) {
         guard let index = project.assets.firstIndex(where: { $0.id == assetID }) else { return }
         waveformService.invalidateCache(for: project.assets[index])
@@ -1994,14 +1977,6 @@ final class ProjectController {
             return
         }
         guard proxyGenerationTasks[assetID] == nil else { return }
-
-        if proxyService.existingValidProxy(for: asset) != nil {
-            asset.proxyStatus = .ready
-            project.assets[index] = asset
-            notify()
-            startWaveformGeneration(for: assetID)
-            return
-        }
 
         asset.proxyStatus = .generating
         asset.proxyFailureReason = nil

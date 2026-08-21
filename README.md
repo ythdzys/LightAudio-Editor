@@ -11,7 +11,7 @@
 
 LightAudio Editor provides a professional timeline-oriented workflow for arranging, trimming, mixing, and exporting audio. Video files can be imported as audio-only sources, while original media remains untouched throughout the editing process.
 
-The app targets **macOS Catalina 10.15 and later** and uses the readable JSON-based `.liau` project format.
+The Universal app supports **Intel Macs on macOS Catalina 10.15 and later** and **Apple silicon Macs on macOS Big Sur 11.0 and later**. Apple silicon starts at Big Sur; no Apple silicon Mac can run Catalina. LightAudio Editor uses the readable, versioned JSON-based `.liau` project format, and `.liau` files can be opened from Finder or from the app.
 
 ## Highlights
 
@@ -93,7 +93,8 @@ Waveform and proxy caches are validated against source identity and regenerated 
 
 Requirements:
 
-- macOS 10.15 or later
+- Intel Mac: macOS 10.15 or later
+- Apple silicon Mac: macOS 11.0 or later
 - A recent Xcode release with the macOS SDK
 - Swift 5 toolchain
 - FFmpeg only if M4A, MP3, or FLAC export is required
@@ -122,6 +123,12 @@ The built app is written to:
 ```text
 Build/DerivedData/Build/Products/Debug/LightAudio Editor.app
 ```
+
+## Beta Distribution
+
+Beta 1 is version `0.1.0` build `1` and uses bundle identifier `com.ythdzys.LightAudioEditor`. The repository includes scripts for a single Universal `arm64`/`x86_64` archive, Developer ID signing, Apple notarization, ticket stapling, Gatekeeper validation, and ZIP packaging. Packaging fails if either architecture is absent or if the Intel and Apple silicon slices do not retain their macOS 10.15 and 11.0 minimum versions respectively.
+
+See [BETA_RELEASE.md](BETA_RELEASE.md) for packaging instructions and the optional Apple Developer setup. Without a Developer ID identity, the script seals the complete app with an ad-hoc signature and labels the ZIP `ADHOC-UNNOTARIZED`; testers must approve that build once in **Privacy & Security**. Developer ID signing and notarization remain the recommended path for public distribution.
 
 ## Keyboard Shortcuts
 
@@ -177,7 +184,7 @@ xcodebuild \
   test
 ```
 
-Current verification: **43 tests passing**.
+Current verification: **49 tests passing** after the Beta 1 release-preparation pass.
 
 ## Current Limitations
 

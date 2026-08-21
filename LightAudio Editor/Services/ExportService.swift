@@ -233,7 +233,7 @@ final class NativeAudioExportBackend: AudioExportBackend {
         guard frameCount > 0 else { return }
 
         let renderStart = chunkStart + Double(startFrame) / sampleRate
-        let source = try source(for: asset, url: url, sourceCache: sourceCache)
+        let source = try source(for: clip, url: url, sourceCache: sourceCache)
         try source.mix(
             clip: clip,
             track: track,
@@ -245,12 +245,12 @@ final class NativeAudioExportBackend: AudioExportBackend {
         )
     }
 
-    private func source(for asset: MediaAsset, url: URL, sourceCache: SourceCache) throws -> TimelineAudioSource {
-        if let source = sourceCache.sources[asset.id] {
+    private func source(for clip: Clip, url: URL, sourceCache: SourceCache) throws -> TimelineAudioSource {
+        if let source = sourceCache.sources[clip.id] {
             return source
         }
         let source = try TimelineAudioSource(url: url)
-        sourceCache.sources[asset.id] = source
+        sourceCache.sources[clip.id] = source
         return source
     }
 

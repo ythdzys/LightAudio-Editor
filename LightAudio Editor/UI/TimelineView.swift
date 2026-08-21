@@ -1839,9 +1839,6 @@ final class TimelineView: NSView {
             clearAutomation.isEnabled = !hit.clip.volumeAutomationKeyframes.isEmpty
             menu.addItem(clearAutomation)
             menu.addItem(withTitle: "Normalize Clip...", action: #selector(normalizeClipMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
-            let eqItem = NSMenuItem(title: "EQ coming later", action: nil, keyEquivalent: "")
-            eqItem.isEnabled = false
-            menu.addItem(eqItem)
             menu.addItem(.separator())
             menu.addItem(withTitle: "Create Crossfade", action: #selector(createCrossfadeMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             menu.addItem(crossfadeCurveMenu(clipID: hit.clip.id))
