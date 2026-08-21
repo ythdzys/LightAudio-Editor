@@ -2,11 +2,71 @@ import AppKit
 
 private let mediaAssetPasteboardType = NSPasteboard.PasteboardType("com.lightaudio.editor.media-asset-id")
 
+enum TimelineContentSizing {
+    static let maximumWidth: CGFloat = 8_000_000
+
+    static func contentWidth(calculatedWidth: Double, viewportWidth: CGFloat) -> CGFloat {
+        let safeCalculated = calculatedWidth.isFinite ? CGFloat(max(0, calculatedWidth)) : maximumWidth
+        let safeViewport = viewportWidth.isFinite ? max(0, viewportWidth) : 0
+        return min(maximumWidth, max(320, max(safeCalculated, safeViewport)))
+    }
+}
+
+enum WaveformRenderMetrics {
+    static let maximumDrawnColumns = 6_000
+    static let maximumReferenceSamples = 8_192
+
+    static func barCount(peakCount: Int, dirtyWidth: CGFloat) -> Int {
+        guard peakCount > 0 else { return 1 }
+        let pixelColumns = max(1, Int(ceil(max(0, dirtyWidth))))
+        return max(1, min(peakCount, min(maximumDrawnColumns, pixelColumns)))
+    }
+
+    static func referencePeak(
+        peaks: [WaveformPeak],
+        percentile: Double,
+        noiseFloor: Float
+    ) -> Float {
+        guard !peaks.isEmpty else { return 1 }
+        let stride = max(1, Int(ceil(Double(peaks.count) / Double(maximumReferenceSamples))))
+        var amplitudes: [Float] = []
+        amplitudes.reserveCapacity(min(peaks.count, maximumReferenceSamples))
+        var index = 0
+        while index < peaks.count {
+            let peak = peaks[index]
+            let amplitude = max(abs(peak.min), abs(peak.max))
+            if amplitude.isFinite, amplitude > noiseFloor {
+                amplitudes.append(amplitude)
+            }
+            index += stride
+        }
+        guard !amplitudes.isEmpty else { return 1 }
+        amplitudes.sort()
+        let clampedPercentile = min(1, max(0, percentile))
+        let percentileIndex = min(
+            amplitudes.count - 1,
+            max(0, Int(Double(amplitudes.count - 1) * clampedPercentile))
+        )
+        return max(noiseFloor, amplitudes[percentileIndex])
+    }
+}
+
 final class TimelineView: NSView {
     enum TrimEdge { case left, right }
 
-    var project: Project = .empty() { didSet { needsDisplay = true } }
-    var waveforms: [UUID: WaveformData] = [:] { didSet { needsDisplay = true } }
+    var project: Project = .empty() {
+        didSet {
+            rebuildProjectCaches()
+            needsDisplay = true
+        }
+    }
+    var waveforms: [UUID: WaveformData] = [:] {
+        didSet {
+            let activeCacheKeys = Set(waveforms.values.map(\.cacheKey))
+            waveformReferencePeakCache = waveformReferencePeakCache.filter { activeCacheKeys.contains($0.key) }
+            needsDisplay = true
+        }
+    }
     var selectedClipIDs: Set<UUID> = [] { didSet { needsDisplay = true } }
     var selectedClipID: UUID? { didSet { needsDisplay = true } }
     var playheadTime: TimeInterval = 0 {
@@ -88,6 +148,13 @@ final class TimelineView: NSView {
     private var isContinuousEditActive = false
     private weak var observedScrollClipView: NSClipView?
     private var scrollBoundsObserver: NSObjectProtocol?
+    private var lastObservedScrollBounds: NSRect?
+    private var trackOrigins: [CGFloat] = []
+    private var cachedTrackHeights: [CGFloat] = []
+    private var tracksBottom: CGFloat = 28
+    private var assetsByID: [UUID: MediaAsset] = [:]
+    private var crossfadesByTrackID: [UUID: [Crossfade]] = [:]
+    private var waveformReferencePeakCache: [String: Float] = [:]
 
     private struct DragState {
         var clipID: UUID
@@ -169,6 +236,7 @@ final class TimelineView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        rebuildProjectCaches()
         registerForDraggedTypes([mediaAssetPasteboardType])
         installMagnificationGesture()
         window?.acceptsMouseMovedEvents = true
@@ -176,6 +244,7 @@ final class TimelineView: NSView {
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        rebuildProjectCaches()
         registerForDraggedTypes([mediaAssetPasteboardType])
         installMagnificationGesture()
         window?.acceptsMouseMovedEvents = true
@@ -203,14 +272,24 @@ final class TimelineView: NSView {
             NotificationCenter.default.removeObserver(scrollBoundsObserver)
         }
         observedScrollClipView = clipView
+        lastObservedScrollBounds = clipView.bounds
         clipView.postsBoundsChangedNotifications = true
         scrollBoundsObserver = NotificationCenter.default.addObserver(
             forName: NSView.boundsDidChangeNotification,
             object: clipView,
             queue: .main
         ) { [weak self] _ in
-            self?.needsDisplay = true
+            self?.scrollBoundsDidChange(to: clipView.bounds)
         }
+    }
+
+    private func scrollBoundsDidChange(to newBounds: NSRect) {
+        let oldBounds = lastObservedScrollBounds ?? newBounds
+        lastObservedScrollBounds = newBounds
+
+        let oldHeader = NSRect(x: oldBounds.minX, y: oldBounds.minY, width: trackHeaderWidth + 1, height: oldBounds.height)
+        let newHeader = NSRect(x: newBounds.minX, y: newBounds.minY, width: trackHeaderWidth + 1, height: newBounds.height)
+        setNeedsDisplay(oldHeader.union(newHeader))
     }
 
     override func updateTrackingAreas() {
@@ -232,6 +311,41 @@ final class TimelineView: NSView {
         CGFloat(TimelineViewState.clampedTrackHeight(project.viewState.trackHeight))
     }
 
+    private func rebuildProjectCaches() {
+        var indexedAssets: [UUID: MediaAsset] = [:]
+        for asset in project.assets where indexedAssets[asset.id] == nil {
+            indexedAssets[asset.id] = asset
+        }
+        assetsByID = indexedAssets
+        trackOrigins.removeAll(keepingCapacity: true)
+        cachedTrackHeights.removeAll(keepingCapacity: true)
+        trackOrigins.reserveCapacity(project.timeline.tracks.count)
+        cachedTrackHeights.reserveCapacity(project.timeline.tracks.count)
+
+        var y = rulerHeight
+        var clipTrackIDs: [UUID: UUID] = [:]
+        for track in project.timeline.tracks {
+            let trackHeight = height(for: track)
+            trackOrigins.append(y)
+            cachedTrackHeights.append(trackHeight)
+            y += trackHeight
+            for clip in track.clips {
+                clipTrackIDs[clip.id] = track.id
+            }
+        }
+        tracksBottom = y
+
+        var indexedCrossfades: [UUID: [Crossfade]] = [:]
+        for crossfade in project.timeline.crossfades {
+            guard let trackID = clipTrackIDs[crossfade.leadingClipID],
+                  clipTrackIDs[crossfade.trailingClipID] == trackID else {
+                continue
+            }
+            indexedCrossfades[trackID, default: []].append(crossfade)
+        }
+        crossfadesByTrackID = indexedCrossfades
+    }
+
     private func height(for track: Track) -> CGFloat {
         track.isCollapsed ? collapsedTrackHeight : expandedTrackHeight
     }
@@ -249,27 +363,20 @@ final class TimelineView: NSView {
     }
 
     private func heightForTrack(at index: Int) -> CGFloat {
-        guard index >= 0 && index < project.timeline.tracks.count else { return expandedTrackHeight }
-        return height(for: project.timeline.tracks[index])
+        guard index >= 0 && index < cachedTrackHeights.count else { return expandedTrackHeight }
+        return cachedTrackHeights[index]
     }
 
     private func trackY(for index: Int) -> CGFloat {
         guard index > 0 else { return rulerHeight }
-        var y = rulerHeight
-        for i in 0..<min(index, project.timeline.tracks.count) {
-            y += heightForTrack(at: i)
+        if index < trackOrigins.count {
+            return trackOrigins[index]
         }
-        if index > project.timeline.tracks.count {
-            y += CGFloat(index - project.timeline.tracks.count) * expandedTrackHeight
-        }
-        return y
+        return tracksBottom + CGFloat(max(0, index - trackOrigins.count)) * expandedTrackHeight
     }
 
     func preferredContentHeight() -> CGFloat {
-        let trackHeights = project.timeline.tracks.indices.reduce(CGFloat(0)) { total, index in
-            total + heightForTrack(at: index)
-        }
-        return max(520, rulerHeight + trackHeights + 24)
+        max(520, tracksBottom + 24)
     }
 
     private func invalidatePlayhead(from oldTime: TimeInterval, to newTime: TimeInterval) {
@@ -435,25 +542,36 @@ final class TimelineView: NSView {
     }
 
     private func drawTracks(in renderRect: NSRect) {
+        let bodyBounds = NSRect(
+            x: stickyHeaderMaxX + 1,
+            y: renderRect.minY,
+            width: max(0, bounds.maxX - stickyHeaderMaxX - 1),
+            height: renderRect.height
+        )
+        let bodyRenderRect = renderRect.intersection(bodyBounds)
+        guard !bodyRenderRect.isNull, !bodyRenderRect.isEmpty else {
+            drawTrackReorderPreview(in: renderRect)
+            return
+        }
         for (trackIndex, track) in project.timeline.tracks.enumerated() {
             let y = trackY(for: trackIndex)
             let laneHeight = height(for: track)
             let laneRect = NSRect(x: 0, y: y, width: bounds.width, height: laneHeight)
-            guard laneRect.intersects(renderRect) else { continue }
+            guard laneRect.intersects(bodyRenderRect) else { continue }
             NSColor(calibratedWhite: trackIndex % 2 == 0 ? 0.135 : 0.12, alpha: 1).setFill()
-            laneRect.intersection(renderRect).fill()
+            laneRect.intersection(bodyRenderRect).fill()
             NSColor(calibratedWhite: 0.24, alpha: 1).setStroke()
-            if y >= renderRect.minY - 1 && y <= renderRect.maxY + 1 {
-                NSBezierPath.strokeLine(from: NSPoint(x: renderRect.minX, y: y), to: NSPoint(x: renderRect.maxX, y: y))
+            if y >= bodyRenderRect.minY - 1 && y <= bodyRenderRect.maxY + 1 {
+                NSBezierPath.strokeLine(from: NSPoint(x: bodyRenderRect.minX, y: y), to: NSPoint(x: bodyRenderRect.maxX, y: y))
             }
             for clip in track.clips {
-                if rect(for: clip, trackIndex: trackIndex).intersects(renderRect) {
-                    drawClip(clip, trackIndex: trackIndex)
+                if rect(for: clip, trackIndex: trackIndex).intersects(bodyRenderRect) {
+                    drawClip(clip, trackIndex: trackIndex, renderRect: bodyRenderRect)
                 }
             }
-            drawCrossfades(for: track, trackIndex: trackIndex, in: renderRect)
+            drawCrossfades(for: track, trackIndex: trackIndex, in: bodyRenderRect)
         }
-        drawTrackReorderPreview(in: renderRect)
+        drawTrackReorderPreview(in: bodyRenderRect)
     }
 
     private func drawDropPreview(in renderRect: NSRect) {
@@ -508,8 +626,9 @@ final class TimelineView: NSView {
 
     private func drawStickyHeaderChrome(in renderRect: NSRect) {
         let headerRect = NSRect(x: stickyHeaderX, y: renderRect.minY, width: trackHeaderWidth, height: renderRect.height)
+        guard headerRect.intersects(renderRect) else { return }
         NSColor(calibratedWhite: 0.145, alpha: 1).setFill()
-        headerRect.fill()
+        headerRect.intersection(renderRect).fill()
         let headerRulerRect = headerRect.intersection(NSRect(x: stickyHeaderX, y: 0, width: trackHeaderWidth, height: rulerHeight))
         if !headerRulerRect.isEmpty {
             NSColor(calibratedWhite: 0.13, alpha: 1).setFill()
@@ -659,9 +778,9 @@ final class TimelineView: NSView {
         path.stroke()
     }
 
-    private func drawClip(_ clip: Clip, trackIndex: Int) {
+    private func drawClip(_ clip: Clip, trackIndex: Int, renderRect: NSRect) {
         let rect = rect(for: clip, trackIndex: trackIndex)
-        let asset = project.asset(id: clip.sourceAssetID)
+        let asset = assetsByID[clip.sourceAssetID]
         let offline = asset?.isMissing ?? true
         let selected = selectedClipIDs.contains(clip.id) || clip.id == selectedClipID
         let compact = rect.height < 36
@@ -675,14 +794,14 @@ final class TimelineView: NSView {
         drawTrimFeedbackIfNeeded(for: clip, in: rect)
 
         if !compact {
-            let waveformRect = rect.insetBy(dx: 8, dy: 24)
+            let waveformRect = rect.insetBy(dx: 0, dy: 24)
             if offline {
-                drawPlaceholderWaveform(in: waveformRect, style: .offline)
+                drawPlaceholderWaveform(in: waveformRect, style: .offline, renderRect: renderRect)
             } else if let waveform = waveforms[clip.sourceAssetID] {
-                drawWaveform(waveform, clip: clip, in: waveformRect)
+                drawWaveform(waveform, clip: clip, in: waveformRect, renderRect: renderRect)
             } else {
                 let style: PlaceholderWaveformStyle = asset?.waveformStatus == .failed ? .failed : .generating
-                drawPlaceholderWaveform(in: waveformRect, style: style)
+                drawPlaceholderWaveform(in: waveformRect, style: style, renderRect: renderRect)
             }
             drawFadeGuides(for: clip, in: rect)
             drawVolumeEnvelope(for: clip, in: rect, selected: selected)
@@ -857,8 +976,7 @@ final class TimelineView: NSView {
     }
 
     private func drawCrossfades(for track: Track, trackIndex: Int, in renderRect: NSRect) {
-        let clipIDs = Set(track.clips.map(\.id))
-        for crossfade in project.timeline.crossfades where clipIDs.contains(crossfade.leadingClipID) && clipIDs.contains(crossfade.trailingClipID) {
+        for crossfade in crossfadesByTrackID[track.id] ?? [] {
             let startX = x(for: crossfade.startTime)
             let endX = x(for: crossfade.startTime + crossfade.duration)
             guard endX > startX else { continue }
@@ -943,13 +1061,15 @@ final class TimelineView: NSView {
         case failed
     }
 
-    private func drawWaveform(_ waveform: WaveformData, clip: Clip, in rect: NSRect) {
+    private func drawWaveform(_ waveform: WaveformData, clip: Clip, in rect: NSRect, renderRect: NSRect) {
         guard !waveform.peaks.isEmpty, waveform.duration > 0, rect.width > 1 else {
-            drawPlaceholderWaveform(in: rect, style: .failed)
+            drawPlaceholderWaveform(in: rect, style: .failed, renderRect: renderRect)
             return
         }
 
-        let drawRect = rect.intersection(visibleRect.insetBy(dx: -2, dy: 0))
+        let drawRect = rect
+            .intersection(renderRect.insetBy(dx: -2, dy: 0))
+            .intersection(visibleRect.insetBy(dx: -2, dy: 0))
         guard drawRect.width > 1, drawRect.height > 1 else { return }
 
         let fullSourceStart = max(0, min(clip.sourceStart, waveform.duration))
@@ -959,7 +1079,7 @@ final class TimelineView: NSView {
         let sourceStart = fullSourceStart + (fullSourceEnd - fullSourceStart) * leftFraction
         let sourceEnd = fullSourceStart + (fullSourceEnd - fullSourceStart) * rightFraction
         guard sourceEnd > sourceStart else {
-            drawPlaceholderWaveform(in: rect, style: .failed)
+            drawPlaceholderWaveform(in: rect, style: .failed, renderRect: renderRect)
             return
         }
 
@@ -973,13 +1093,11 @@ final class TimelineView: NSView {
         }
 
         let waveformNoiseFloor: Float = 0.0007
-        let waveformPeakPercentile = 0.95
         let waveformMaxBoost: Float = 22
         let waveformTargetFill: Float = 0.84
-        let maximumDrawnBars = 6000
 
         var visiblePeaks: [VisiblePeak] = []
-        let bars = max(1, min(waveform.peaks.count, min(maximumDrawnBars, Int(ceil(drawRect.width)))))
+        let bars = WaveformRenderMetrics.barCount(peakCount: waveform.peaks.count, dirtyWidth: drawRect.width)
         visiblePeaks.reserveCapacity(bars)
         for bar in 0..<bars {
             let leftTime = sourceStart + (sourceEnd - sourceStart) * Double(bar) / Double(bars)
@@ -998,14 +1116,7 @@ final class TimelineView: NSView {
             visiblePeaks.append(VisiblePeak(min: minPeak, max: maxPeak, amplitude: amplitude))
         }
 
-        let amplitudes = visiblePeaks.map(\.amplitude).filter { $0 > waveformNoiseFloor }.sorted()
-        let referencePeak: Float
-        if amplitudes.isEmpty {
-            referencePeak = 1
-        } else {
-            let percentileIndex = min(amplitudes.count - 1, max(0, Int(Double(amplitudes.count - 1) * waveformPeakPercentile)))
-            referencePeak = max(amplitudes[percentileIndex], waveformNoiseFloor)
-        }
+        let referencePeak = waveformReferencePeak(for: waveform, noiseFloor: waveformNoiseFloor)
         let visualScale = min(waveformMaxBoost, max(1, waveformTargetFill / referencePeak))
         let halfHeight = drawRect.height * 0.5
         let usableHalfHeight = halfHeight * 0.92
@@ -1013,8 +1124,10 @@ final class TimelineView: NSView {
 
         let path = NSBezierPath()
         let mid = drawRect.midY
+        let drawableWidth = max(0, drawRect.width - 1)
         for (bar, peak) in visiblePeaks.enumerated() {
-            let x = drawRect.minX + CGFloat(bar) / CGFloat(bars) * drawRect.width
+            let fraction = bars > 1 ? CGFloat(bar) / CGFloat(bars - 1) : 0.5
+            let x = drawRect.minX + 0.5 + fraction * drawableWidth
             var topOffset = CGFloat(max(0, peak.max) * visualScale) * usableHalfHeight
             var bottomOffset = CGFloat(max(0, -peak.min) * visualScale) * usableHalfHeight
             if peak.amplitude > waveformNoiseFloor {
@@ -1033,21 +1146,39 @@ final class TimelineView: NSView {
         NSGraphicsContext.current?.shouldAntialias = previousAntialias ?? true
     }
 
+    private func waveformReferencePeak(for waveform: WaveformData, noiseFloor: Float) -> Float {
+        if let cached = waveformReferencePeakCache[waveform.cacheKey] {
+            return cached
+        }
+        let reference = WaveformRenderMetrics.referencePeak(
+            peaks: waveform.peaks,
+            percentile: 0.95,
+            noiseFloor: noiseFloor
+        )
+        waveformReferencePeakCache[waveform.cacheKey] = reference
+        return reference
+    }
+
     private func peakIndex(for time: TimeInterval, waveform: WaveformData) -> Int {
         guard waveform.duration > 0, !waveform.peaks.isEmpty else { return 0 }
         let fraction = min(1, max(0, time / waveform.duration))
         return min(waveform.peaks.count - 1, max(0, Int(fraction * Double(waveform.peaks.count - 1))))
     }
 
-    private func drawPlaceholderWaveform(in rect: NSRect, style: PlaceholderWaveformStyle) {
+    private func drawPlaceholderWaveform(in rect: NSRect, style: PlaceholderWaveformStyle, renderRect: NSRect? = nil) {
+        let drawRect = rect
+            .intersection(renderRect ?? rect)
+            .intersection(visibleRect.insetBy(dx: -2, dy: 0))
+        guard !drawRect.isNull, drawRect.width > 1, drawRect.height > 1 else { return }
         let path = NSBezierPath()
-        let mid = rect.midY
-        let bars = max(12, Int(rect.width / 5))
+        let mid = drawRect.midY
+        let bars = max(2, Int(ceil(drawRect.width / 4)) + 1)
         for i in 0..<bars {
-            let x = rect.minX + CGFloat(i) / CGFloat(bars) * rect.width
-            let amp = CGFloat((sin(Double(i) * 0.75) + 1) * 0.35 + 0.15)
-            path.move(to: NSPoint(x: x, y: mid - rect.height * amp * 0.5))
-            path.line(to: NSPoint(x: x, y: mid + rect.height * amp * 0.5))
+            let x = drawRect.minX + CGFloat(i) / CGFloat(bars - 1) * drawRect.width
+            let phase = Double(max(0, x - rect.minX) / 4) * 0.75
+            let amp = CGFloat((sin(phase) + 1) * 0.35 + 0.15)
+            path.move(to: NSPoint(x: x, y: mid - drawRect.height * amp * 0.5))
+            path.line(to: NSPoint(x: x, y: mid + drawRect.height * amp * 0.5))
         }
         switch style {
         case .generating:
@@ -1441,8 +1572,7 @@ final class TimelineView: NSView {
 
     private func hitCrossfadeRegion(at point: NSPoint) -> Bool {
         for (trackIndex, track) in project.timeline.tracks.enumerated() {
-            let clipIDs = Set(track.clips.map(\.id))
-            for crossfade in project.timeline.crossfades where clipIDs.contains(crossfade.leadingClipID) && clipIDs.contains(crossfade.trailingClipID) {
+            for crossfade in crossfadesByTrackID[track.id] ?? [] {
                 let startX = x(for: crossfade.startTime)
                 let endX = x(for: crossfade.startTime + crossfade.duration)
                 let y = trackY(for: trackIndex)

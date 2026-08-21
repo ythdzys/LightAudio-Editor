@@ -21,6 +21,7 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
         didSet { tableView.reloadData() }
     }
     var onAddAsset: ((UUID) -> Void)?
+    var onAddAssetToNewTrack: ((UUID) -> Void)?
     var onImportRequested: (() -> Void)?
     var onImportFolderRequested: (() -> Void)?
     var onImportURLs: (([URL]) -> Void)?
@@ -31,6 +32,7 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
     var onCancelProxyGeneration: ((UUID) -> Void)?
     var onRemoveAsset: ((UUID) -> Void)?
     var onShowInfo: ((UUID) -> Void)?
+    var onShowWaveformError: ((UUID) -> Void)?
 
     private let rootView = MediaBinDropView()
     private let tableView = MediaBinTableView()
@@ -92,7 +94,7 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
         tableView.delegate = self
         tableView.dataSource = self
         tableView.target = self
-        tableView.doubleAction = #selector(addSelected)
+        tableView.doubleAction = #selector(addSelectedToNewTrack)
         tableView.setDraggingSourceOperationMask(.copy, forLocal: true)
         tableView.menuProvider = { [weak self] event in self?.menu(for: event) }
         tableView.onURLsDropped = { [weak self] urls in self?.onImportURLs?(urls) }
@@ -221,6 +223,11 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
         onAddAsset?(asset.id)
     }
 
+    @objc private func addSelectedToNewTrack() {
+        guard let asset = selectedAsset else { return }
+        onAddAssetToNewTrack?(asset.id)
+    }
+
     private func menu(for event: NSEvent) -> NSMenu? {
         let point = tableView.convert(event.locationInWindow, from: nil)
         let row = tableView.row(at: point)
@@ -263,6 +270,10 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
         let waveform = targetedItem(title: "Regenerate Waveform", action: #selector(regenerateWaveformSelected))
         waveform.isEnabled = !asset.isMissing
         menu.addItem(waveform)
+
+        if asset.waveformStatus == .failed {
+            menu.addItem(targetedItem(title: "Show Waveform Error", action: #selector(showWaveformErrorSelected)))
+        }
 
         if asset.kind == .videoAudio {
             let proxy = targetedItem(title: "Regenerate Audio Proxy", action: #selector(regenerateProxySelected))
@@ -335,6 +346,11 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
     @objc private func showInfoSelected() {
         guard let asset = selectedAsset else { return }
         onShowInfo?(asset.id)
+    }
+
+    @objc private func showWaveformErrorSelected() {
+        guard let asset = selectedAsset else { return }
+        onShowWaveformError?(asset.id)
     }
 
     private var selectedAsset: MediaAsset? {

@@ -32,7 +32,16 @@ final class WaveformAnalysisService {
                 self.memoryCache.setObject(WaveformBox(waveform), forKey: cacheKey as NSString)
                 DispatchQueue.main.async { completion(.success(waveform)) }
             } catch {
-                DispatchQueue.main.async { completion(.failure(error)) }
+                let detail = "Could not generate a waveform for \(asset.metadata.fileName): \(error.localizedDescription)"
+                let contextualError = NSError(
+                    domain: "LightAudioWaveform",
+                    code: (error as NSError).code,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: detail,
+                        NSUnderlyingErrorKey: error
+                    ]
+                )
+                DispatchQueue.main.async { completion(.failure(contextualError)) }
             }
         }
     }

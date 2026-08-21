@@ -449,7 +449,7 @@ final class AudioPlaybackEngine {
     private func recordMasterPeak(_ peak: Double) {
         meterLock.lock()
         pendingMasterPeak = max(pendingMasterPeak, peak)
-        pendingClipping = pendingClipping || peak > 1
+        pendingClipping = pendingClipping || AudioPeakMath.isClipping(peak: peak)
         meterLock.unlock()
     }
 

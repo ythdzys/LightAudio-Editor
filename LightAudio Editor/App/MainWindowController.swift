@@ -27,6 +27,8 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     private var observedAudioRenderRevision = 0
     private var terminationWasApproved = false
     private var playbackRefreshWorkItem: DispatchWorkItem?
+    private var playbackTimerTick = 0
+    private var lastPlaybackClipDetectedAt: TimeInterval?
 
     init(projectController: ProjectController) {
         self.projectController = projectController
@@ -49,6 +51,21 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         super.windowDidLoad()
     }
 
+    func windowDidResize(_ notification: Notification) {
+        updateTimelineLayoutForWindowSize()
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        updateTimelineLayoutForWindowSize()
+    }
+
+    private func updateTimelineLayoutForWindowSize() {
+        guard timelineScrollView != nil else { return }
+        window?.layoutIfNeeded()
+        resizeTimeline(for: projectController.project)
+        timelineView.needsDisplay = true
+    }
+
     private func setupUI() {
         guard let window = window else { return }
         window.contentView = buildRootView()
@@ -64,7 +81,14 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             self?.resetWindowLayout(nil)
         }
 
-        mediaBin.onAddAsset = { [weak self] id in self?.projectController.addAssetToTimeline(id) }
+        mediaBin.onAddAsset = { [weak self] id in
+            guard let self, let result = self.projectController.addAssetToTimeline(id) else { return }
+            self.showStatus(self.statusMessage(for: result))
+        }
+        mediaBin.onAddAssetToNewTrack = { [weak self] id in
+            guard let self, let result = self.projectController.addAssetToNewTrack(id) else { return }
+            self.showStatus(self.statusMessage(for: result))
+        }
         mediaBin.onImportRequested = { [weak self] in self?.importMediaToLibrary() }
         mediaBin.onImportFolderRequested = { [weak self] in self?.importMediaFolderToLibrary() }
         mediaBin.onImportURLs = { [weak self] urls in self?.importDroppedMedia(urls) }
@@ -99,6 +123,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             }
         }
         mediaBin.onShowInfo = { [weak self] id in self?.showMediaInfo(assetID: id) }
+        mediaBin.onShowWaveformError = { [weak self] id in self?.showWaveformError(assetID: id) }
         inspector.onGainChanged = { [weak self] gain in self?.projectController.setClipGain(gain) }
         inspector.onPanChanged = { [weak self] pan in self?.projectController.setClipPan(pan) }
         inspector.onFadeInChanged = { [weak self] duration in self?.projectController.setClipFadeIn(duration) }
@@ -279,6 +304,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         clipIndicator.isBordered = false
         clipIndicator.font = .systemFont(ofSize: 10, weight: .bold)
         clipIndicator.contentTintColor = .secondaryLabelColor
+        clipIndicator.toolTip = "Output clipping indicator"
     }
 
     private func buildRootView() -> NSView {
@@ -668,7 +694,13 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                     if exportResult.clippingDetected {
                         self.setClippingIndicator(active: true)
                         self.showStatus("Export completed with clipping warning")
-                        self.showInfo("Export completed, but clipping was detected. Consider lowering clip, track, or master volume.")
+                        let peakDB = 20 * log10(max(exportResult.maximumPeak, 0.000_001))
+                        self.showInfo(
+                            String(
+                                format: "Export completed, but clipping was detected (peak %.2f dBFS). Consider lowering clip, track, or master volume.",
+                                peakDB
+                            )
+                        )
                     } else {
                         self.showStatus("Export completed")
                         self.showInfo("Export complete.")
@@ -990,6 +1022,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     @objc private func clearClippingIndicator() {
+        lastPlaybackClipDetectedAt = nil
         setClippingIndicator(active: false)
         showStatus("Clipping indicator reset")
     }
@@ -1031,6 +1064,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             playbackTimer?.invalidate()
             playbackTimer = nil
             resetMeters()
+            updateToolbarLabels()
             showStatus(wasPreparing ? "Playback cancelled" : "Playback paused")
         } else {
             startPlayback(from: projectController.playheadTime)
@@ -1050,6 +1084,8 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         }
         let playbackStart = loopAdjustedStartTime(from: time)
         let playbackEnd = activeLoopRange()?.end ?? max(playbackStart, projectController.project.duration)
+        lastPlaybackClipDetectedAt = nil
+        setClippingIndicator(active: false)
         resetMeters()
         showStatus("Preparing playback...")
         playbackEngine.play(project: projectController.project, from: playbackStart, endingAt: playbackEnd) { [weak self] result in
@@ -1060,22 +1096,29 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 self.timelineView.playheadTime = playbackStart
                 self.timeLabel.stringValue = Timecode.string(playbackStart)
                 self.startPlaybackTimer()
+                self.updateToolbarLabels()
                 self.showStatus("Playing")
             case .failure(let error):
+                self.updateToolbarLabels()
                 self.showStatus("Playback failed")
                 self.showError(error.localizedDescription)
             }
         }
+        updateToolbarLabels()
     }
 
     private func startPlaybackTimer() {
         playbackTimer?.invalidate()
+        playbackTimerTick = 0
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.projectController.playheadTime = self.playbackEngine.currentTime
             self.timelineView.playheadTime = self.projectController.playheadTime
             self.timeLabel.stringValue = Timecode.string(self.projectController.playheadTime)
-            self.updateMeters()
+            self.playbackTimerTick += 1
+            if self.playbackTimerTick.isMultiple(of: 2) {
+                self.updateMeters()
+            }
             self.scrollTimelineToPlayheadIfNeeded()
         }
         playbackTimer = timer
@@ -1088,6 +1131,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         playbackEngine.stop()
         playbackTimer?.invalidate()
         playbackTimer = nil
+        updateToolbarLabels()
         projectController.setPlayhead(time)
         timelineView.playheadTime = time
         timeLabel.stringValue = Timecode.string(time)
@@ -1105,6 +1149,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         playbackTimer?.invalidate()
         playbackTimer = nil
         let failedAt = playbackEngine.currentTime
+        updateToolbarLabels()
         projectController.setPlayhead(failedAt)
         timelineView.playheadTime = failedAt
         timeLabel.stringValue = Timecode.string(failedAt)
@@ -1216,9 +1261,17 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         Date imported: \(imported)
         Usage count: \(usage)
         Waveform status: \(asset.waveformStatus.rawValue)\(proxyStatus)
+        Waveform error: \(asset.waveformFailureReason ?? "None")
         State: \(relinkState)
         """
         showInfo(message)
+    }
+
+    private func showWaveformError(assetID: UUID) {
+        guard let asset = projectController.project.asset(id: assetID) else { return }
+        let reason = asset.waveformFailureReason
+            ?? "No detailed waveform error was recorded. Try Regenerate Waveform to run the current analyzer again."
+        showInfo("Waveform generation failed for \(asset.displayName).\n\n\(reason)")
     }
 
     private func renameMedia(assetID: UUID) {
@@ -1384,18 +1437,24 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         var decayed: [UUID: Double] = [:]
         for track in projectController.project.timeline.tracks {
             let old = displayedTrackLevels[track.id] ?? 0
-            decayed[track.id] = max(raw.trackPeaks[track.id] ?? 0, old * 0.84)
+            decayed[track.id] = max(raw.trackPeaks[track.id] ?? 0, old * 0.71)
         }
         displayedTrackLevels = decayed
-        displayedMasterLevel = max(raw.masterPeak, displayedMasterLevel * 0.84)
+        displayedMasterLevel = max(raw.masterPeak, displayedMasterLevel * 0.71)
         timelineView.trackLevels = displayedTrackLevels
         masterMeterView.level = displayedMasterLevel
         if raw.clippingDetected {
             let wasClipping = clippingActive
+            lastPlaybackClipDetectedAt = ProcessInfo.processInfo.systemUptime
             setClippingIndicator(active: true)
             if !wasClipping {
                 showStatus("Playback clipping detected")
             }
+        } else if clippingActive,
+                  let lastPlaybackClipDetectedAt,
+                  ProcessInfo.processInfo.systemUptime - lastPlaybackClipDetectedAt >= 1.5 {
+            self.lastPlaybackClipDetectedAt = nil
+            setClippingIndicator(active: false)
         }
     }
 
@@ -1446,6 +1505,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     private func setClippingIndicator(active: Bool) {
         clippingActive = active
         clipIndicator.contentTintColor = active ? .systemRed : .secondaryLabelColor
+        clipIndicator.toolTip = active ? "Output exceeded 0 dBFS recently. Click to clear." : "Output clipping indicator"
         masterMeterView.clipping = active
     }
 
@@ -1471,7 +1531,8 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         let visibleEnd = max(projectEnd, markerEnd, rangeEnd, 20)
         let calculatedWidth = visibleEnd * TimelineViewState.clampedZoom(project.viewState.zoom) + 160
         let safeWidth = calculatedWidth.isFinite ? calculatedWidth : 8_000_000
-        let width = CGFloat(min(8_000_000, max(2200, safeWidth)))
+        let viewportWidth = timelineScrollView?.contentSize.width ?? 0
+        let width = TimelineContentSizing.contentWidth(calculatedWidth: safeWidth, viewportWidth: viewportWidth)
         let height = timelineView.preferredContentHeight()
         timelineView.setFrameSize(NSSize(width: width, height: height))
     }
@@ -1497,6 +1558,15 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 item.label = projectController.project.viewState.loopRangeEnabled ? "Loop On" : "Loop Off"
                 item.toolTip = item.label
                 item.view?.toolTip = item.label
+            case .playPause:
+                let playing = playbackEngine.isPlaying || playbackEngine.isPreparing
+                let label = playing ? "Pause" : "Play"
+                item.label = label
+                item.toolTip = label
+                item.view?.toolTip = label
+                (item.view as? NSButton)?.image = NSImage(
+                    named: playing ? NSImage.touchBarPauseTemplateName : NSImage.touchBarPlayTemplateName
+                )
             default:
                 break
             }

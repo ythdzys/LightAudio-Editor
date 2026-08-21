@@ -3,6 +3,93 @@ import AVFoundation
 @testable import LightAudio_Editor
 
 final class P2RegressionTests: XCTestCase {
+    func testClippingDetectionIgnoresFloatingPointNoiseAtFullScale() {
+        XCTAssertFalse(AudioPeakMath.isClipping(peak: 1.00001))
+        XCTAssertTrue(AudioPeakMath.isClipping(peak: 1.001))
+    }
+
+    func testWaveformFailureReasonSurvivesProjectSerialization() throws {
+        let asset = MediaAsset(
+            displayName: "Unreadable",
+            originalPath: "/tmp/unreadable.mp3",
+            relativePath: nil,
+            kind: .audio,
+            metadata: MediaFileMetadata(
+                fileName: "unreadable.mp3",
+                fileSize: 100,
+                duration: 2,
+                sampleRate: 44_100,
+                channelCount: 2,
+                checksum: nil
+            ),
+            waveformCacheKey: nil,
+            waveformStatus: .failed,
+            waveformFailureReason: "Decoder could not read the audio stream."
+        )
+
+        let decoded = try JSONDecoder().decode(MediaAsset.self, from: JSONEncoder().encode(asset))
+
+        XCTAssertEqual(decoded.waveformStatus, .failed)
+        XCTAssertEqual(decoded.waveformFailureReason, "Decoder could not read the audio stream.")
+    }
+
+    func testAddingMediaToNewTrackDoesNotReuseTheFirstTrack() throws {
+        let sourceURL = try makeMonoSourceFile(sample: 0.25, duration: 0.1)
+        let recoveryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LightAudio-NewTrack-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: sourceURL)
+            try? FileManager.default.removeItem(at: recoveryDirectory)
+        }
+
+        let recoveryService = AutosaveRecoveryService(recoveryDirectory: recoveryDirectory)
+        defer { recoveryService.stop() }
+        let controller = ProjectController(recoveryService: recoveryService)
+        let asset = try importAsset(from: sourceURL, into: controller)
+        let originalTrackCount = controller.project.timeline.tracks.count
+
+        let result = try XCTUnwrap(controller.addAssetToNewTrack(asset.id))
+
+        XCTAssertEqual(controller.project.timeline.tracks.count, originalTrackCount + 1)
+        XCTAssertEqual(result.targetTrackName, "A\(originalTrackCount + 1)")
+        XCTAssertTrue(controller.project.timeline.tracks[originalTrackCount].clips.contains { $0.sourceAssetID == asset.id })
+        XCTAssertTrue(controller.project.timeline.tracks[0].clips.isEmpty)
+    }
+
+    func testTimelineContentWidthTracksTheViewportAfterWindowResize() {
+        XCTAssertEqual(
+            TimelineContentSizing.contentWidth(calculatedWidth: 900, viewportWidth: 1_440),
+            1_440,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            TimelineContentSizing.contentWidth(calculatedWidth: 3_200, viewportWidth: 1_440),
+            3_200,
+            accuracy: 0.001
+        )
+    }
+
+    func testWaveformRenderingWorkIsBoundedByTheDirtyPixelWidth() {
+        XCTAssertEqual(WaveformRenderMetrics.barCount(peakCount: 360_000, dirtyWidth: 8.2), 9)
+        XCTAssertEqual(
+            WaveformRenderMetrics.barCount(peakCount: 360_000, dirtyWidth: 20_000),
+            WaveformRenderMetrics.maximumDrawnColumns
+        )
+    }
+
+    func testWaveformReferencePeakUsesPercentileInsteadOfSingleExtremeSpike() {
+        var peaks = Array(repeating: WaveformPeak(min: -0.2, max: 0.2), count: 100)
+        peaks[50] = WaveformPeak(min: -1, max: 1)
+
+        let reference = WaveformRenderMetrics.referencePeak(
+            peaks: peaks,
+            percentile: 0.95,
+            noiseFloor: 0.0007
+        )
+
+        XCTAssertEqual(reference, 0.2, accuracy: 0.0001)
+    }
+
     func testPanAutomationInterpolatesAcrossTheClip() {
         let clip = Clip(
             sourceAssetID: UUID(),

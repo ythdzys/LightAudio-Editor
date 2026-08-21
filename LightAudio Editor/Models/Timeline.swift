@@ -349,6 +349,15 @@ enum MixMath {
     }
 }
 
+enum AudioPeakMath {
+    /// Ignore sub-sample floating-point noise around 0 dBFS while still reporting real overs.
+    static let clippingThreshold = 1.0001
+
+    static func isClipping(peak: Double) -> Bool {
+        peak.isFinite && peak > clippingThreshold
+    }
+}
+
 enum AutomationMath {
     // Clip automation times are intentionally relative to the visible, trimmed clip.
     // Trimming clamps out-of-range keyframes, while moving a clip requires no keyframe edits.

@@ -1,6 +1,6 @@
 import AppKit
 
-final class ExportPanelController: NSWindowController {
+final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
     private static var active: ExportPanelController?
 
     private let project: Project
@@ -10,11 +10,12 @@ final class ExportPanelController: NSWindowController {
     private let sampleRatePopup = NSPopUpButton()
     private let channelsPopup = NSPopUpButton()
     private let bitratePopup = NSPopUpButton()
-    private let outputField = NSTextField(labelWithString: "")
+    private let outputField = NSTextField()
     private let availabilityLabel = NSTextField(labelWithString: "")
     private let exportButton = NSButton(title: "Export", target: nil, action: nil)
     private var outputURL: URL?
     private var availabilityRequestID = UUID()
+    private var formatIsAvailable = false
 
     static func show(window: NSWindow?, project: Project, completion: @escaping (ExportSettings) -> Void) {
         let controller = ExportPanelController(project: project, completion: completion)
@@ -57,6 +58,8 @@ final class ExportPanelController: NSWindowController {
         bitratePopup.selectItem(withTitle: "256 kbps")
         outputURL = defaultOutputURL(for: .wav)
         outputField.stringValue = outputURL?.path ?? ""
+        outputField.placeholderString = "Output file path"
+        outputField.delegate = self
 
         formatPopup.target = self
         formatPopup.action = #selector(formatChanged)
@@ -67,7 +70,7 @@ final class ExportPanelController: NSWindowController {
         addRow(to: grid, label: "Sample rate", view: sampleRatePopup)
         addRow(to: grid, label: "Channels", view: channelsPopup)
         addRow(to: grid, label: "Bitrate", view: bitratePopup)
-        addRow(to: grid, label: "Output", view: outputField, trailing: browse)
+        addRow(to: grid, label: "Output file", view: outputField, trailing: browse)
         addRow(to: grid, label: "Availability", view: availabilityLabel)
 
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel))
@@ -116,6 +119,7 @@ final class ExportPanelController: NSWindowController {
 
     @objc private func formatChanged() {
         let selected = selectedFormat()
+        syncOutputURLFromField()
         outputURL = replacingExtension(of: outputURL ?? defaultOutputURL(for: selected), format: selected)
         outputField.stringValue = outputURL?.path ?? ""
         updateForFormat()
@@ -132,9 +136,10 @@ final class ExportPanelController: NSWindowController {
         case .wav, .aiff:
             applyAvailability(ExternalEncoderExportBackend.availability(for: format))
         case .m4a, .mp3, .flac:
+            formatIsAvailable = false
             availabilityLabel.stringValue = "Checking FFmpeg..."
             availabilityLabel.textColor = .secondaryLabelColor
-            exportButton.isEnabled = false
+            updateExportButton()
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let availability = ExternalEncoderExportBackend.availability(for: format)
                 DispatchQueue.main.async {
@@ -150,16 +155,53 @@ final class ExportPanelController: NSWindowController {
     }
 
     private func applyAvailability(_ availability: (available: Bool, reason: String?)) {
-        exportButton.isEnabled = availability.available && outputURL != nil
+        formatIsAvailable = availability.available
+        updateExportButton()
         availabilityLabel.stringValue = availability.reason ?? "Available"
         availabilityLabel.textColor = availability.available ? .secondaryLabelColor : .systemRed
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field === outputField else { return }
+        syncOutputURLFromField()
+        updateExportButton()
+    }
+
+    private func syncOutputURLFromField() {
+        let rawPath = outputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawPath.isEmpty else {
+            outputURL = nil
+            return
+        }
+
+        let expandedPath = (rawPath as NSString).expandingTildeInPath
+        if expandedPath.hasPrefix("/") {
+            outputURL = URL(fileURLWithPath: expandedPath)
+        } else {
+            let directory = (outputURL ?? defaultOutputURL(for: selectedFormat())).deletingLastPathComponent()
+            outputURL = directory.appendingPathComponent(expandedPath)
+        }
+    }
+
+    private func updateExportButton() {
+        guard let outputURL else {
+            exportButton.isEnabled = false
+            return
+        }
+        exportButton.isEnabled = formatIsAvailable
+            && outputURL.isFileURL
+            && !outputURL.lastPathComponent.isEmpty
+            && !outputURL.hasDirectoryPath
     }
 
     @objc private func browseOutput() {
         let format = selectedFormat()
         let panel = NSSavePanel()
         panel.allowedFileTypes = [fileExtension(for: format)]
-        panel.nameFieldStringValue = "\(project.name).\(fileExtension(for: format))"
+        syncOutputURLFromField()
+        let proposedURL = outputURL ?? defaultOutputURL(for: format)
+        panel.directoryURL = proposedURL.deletingLastPathComponent()
+        panel.nameFieldStringValue = replacingExtension(of: proposedURL, format: format).lastPathComponent
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.outputURL = url
@@ -174,7 +216,11 @@ final class ExportPanelController: NSWindowController {
     }
 
     @objc private func export() {
-        guard let outputURL = outputURL else { return }
+        syncOutputURLFromField()
+        guard let rawOutputURL = outputURL else { return }
+        let outputURL = replacingExtension(of: rawOutputURL, format: selectedFormat())
+        self.outputURL = outputURL
+        outputField.stringValue = outputURL.path
         if FileManager.default.fileExists(atPath: outputURL.path) {
             confirmOverwrite(of: outputURL)
             return

@@ -184,7 +184,7 @@ xcodebuild \
   test
 ```
 
-Current verification: **49 tests passing** after the Beta 1 release-preparation pass.
+Current verification: **55 tests passing** on both Apple silicon and Intel build paths for Beta 2.
 
 ## Current Limitations
 
@@ -193,7 +193,7 @@ Current verification: **49 tests passing** after the Beta 1 release-preparation 
 - Three-band EQ exists only as a future-compatible project model and is not processed
 - Normalize-on-export is not implemented; the export option remains disabled
 - M4A, MP3, and FLAC export require a compatible external FFmpeg build
-- No signed or notarized release package is currently published; build the app from source
+- Beta packages are ad-hoc signed and unnotarized; Gatekeeper approval is required on first launch
 
 ## Technology
 

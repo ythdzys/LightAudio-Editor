@@ -36,6 +36,7 @@ struct MediaAsset: Codable, Identifiable {
     var sourceModificationTimestamp: TimeInterval?
     var waveformCacheKey: String?
     var waveformStatus: WaveformStatus = .notGenerated
+    var waveformFailureReason: String?
     var proxyPath: String?
     var proxyCacheKey: String?
     var proxyStatus: ProxyStatus = .none
@@ -65,6 +66,7 @@ struct MediaAsset: Codable, Identifiable {
         case sourceModificationTimestamp
         case waveformCacheKey
         case waveformStatus
+        case waveformFailureReason
         case proxyPath
         case proxyCacheKey
         case proxyStatus
@@ -72,7 +74,7 @@ struct MediaAsset: Codable, Identifiable {
         case isMissing
     }
 
-    init(id: UUID = UUID(), displayName: String, originalPath: String, relativePath: String?, resolvedPath: String? = nil, kind: MediaKind, metadata: MediaFileMetadata, importedAt: Date? = Date(), sourceModificationTimestamp: TimeInterval? = nil, waveformCacheKey: String?, waveformStatus: WaveformStatus = .notGenerated, proxyPath: String? = nil, proxyCacheKey: String? = nil, proxyStatus: ProxyStatus = .none, proxyFailureReason: String? = nil, isMissing: Bool = false) {
+    init(id: UUID = UUID(), displayName: String, originalPath: String, relativePath: String?, resolvedPath: String? = nil, kind: MediaKind, metadata: MediaFileMetadata, importedAt: Date? = Date(), sourceModificationTimestamp: TimeInterval? = nil, waveformCacheKey: String?, waveformStatus: WaveformStatus = .notGenerated, waveformFailureReason: String? = nil, proxyPath: String? = nil, proxyCacheKey: String? = nil, proxyStatus: ProxyStatus = .none, proxyFailureReason: String? = nil, isMissing: Bool = false) {
         self.id = id
         self.displayName = displayName
         self.originalPath = originalPath
@@ -84,6 +86,7 @@ struct MediaAsset: Codable, Identifiable {
         self.sourceModificationTimestamp = sourceModificationTimestamp
         self.waveformCacheKey = waveformCacheKey
         self.waveformStatus = waveformStatus
+        self.waveformFailureReason = waveformFailureReason
         self.proxyPath = proxyPath
         self.proxyCacheKey = proxyCacheKey
         self.proxyStatus = proxyStatus
@@ -104,6 +107,7 @@ struct MediaAsset: Codable, Identifiable {
         sourceModificationTimestamp = try container.decodeIfPresent(TimeInterval.self, forKey: .sourceModificationTimestamp)
         waveformCacheKey = try container.decodeIfPresent(String.self, forKey: .waveformCacheKey)
         waveformStatus = try container.decodeIfPresent(WaveformStatus.self, forKey: .waveformStatus) ?? .notGenerated
+        waveformFailureReason = try container.decodeIfPresent(String.self, forKey: .waveformFailureReason)
         proxyPath = try container.decodeIfPresent(String.self, forKey: .proxyPath)
         proxyCacheKey = try container.decodeIfPresent(String.self, forKey: .proxyCacheKey)
         proxyStatus = try container.decodeIfPresent(ProxyStatus.self, forKey: .proxyStatus) ?? (kind == .videoAudio ? .missing : .none)

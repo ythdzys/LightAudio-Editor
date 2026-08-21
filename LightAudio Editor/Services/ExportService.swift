@@ -8,6 +8,7 @@ protocol AudioExportBackend {
 
 struct ExportResult {
     var clippingDetected: Bool = false
+    var maximumPeak: Double = 0
 }
 
 /// A single export owns one token from the moment it is requested until it completes.
@@ -165,6 +166,7 @@ final class NativeAudioExportBackend: AudioExportBackend {
         let chunkFrames: AVAudioFrameCount = 4096
         var frame: AVAudioFramePosition = 0
         var clippingDetected = false
+        var maximumPeak = 0.0
 
         do {
             let output = try AVAudioFile(forWriting: outputTransaction.stagingURL, settings: format.settings)
@@ -187,9 +189,9 @@ final class NativeAudioExportBackend: AudioExportBackend {
 
                 applyMasterGain(project.mixState.masterVolumeDB, to: mixBuffer)
 
-                if clampAndDetectClipping(in: mixBuffer) {
-                    clippingDetected = true
-                }
+                let peakReport = clampAndDetectClipping(in: mixBuffer)
+                maximumPeak = max(maximumPeak, peakReport.maximumPeak)
+                clippingDetected = clippingDetected || peakReport.clipped
                 try output.write(from: mixBuffer)
                 frame += AVAudioFramePosition(count)
                 DispatchQueue.main.async { progress(Double(frame) / Double(max(totalFrames, 1))) }
@@ -197,7 +199,7 @@ final class NativeAudioExportBackend: AudioExportBackend {
         }
         if cancellationToken.isCancelled { throw exportCancellationError() }
         try outputTransaction.commit(overwritingExisting: settings.overwriteExisting)
-        return ExportResult(clippingDetected: clippingDetected)
+        return ExportResult(clippingDetected: clippingDetected, maximumPeak: maximumPeak)
     }
 
     private func renderRange(for project: Project, settings: ExportSettings) -> (start: TimeInterval, end: TimeInterval, duration: TimeInterval) {
@@ -254,22 +256,26 @@ final class NativeAudioExportBackend: AudioExportBackend {
         return source
     }
 
-    private func clampAndDetectClipping(in buffer: AVAudioPCMBuffer) -> Bool {
-        guard let data = buffer.floatChannelData else { return false }
+    private func clampAndDetectClipping(in buffer: AVAudioPCMBuffer) -> (clipped: Bool, maximumPeak: Double) {
+        guard let data = buffer.floatChannelData else { return (false, 0) }
         var clipped = false
+        var maximumPeak = 0.0
         for channel in 0..<Int(buffer.format.channelCount) {
             for frame in 0..<Int(buffer.frameLength) {
                 let sample = data[channel][frame]
+                if sample.isFinite {
+                    maximumPeak = max(maximumPeak, Double(abs(sample)))
+                }
                 if sample > 1 {
                     data[channel][frame] = 1
-                    clipped = true
+                    clipped = clipped || AudioPeakMath.isClipping(peak: Double(sample))
                 } else if sample < -1 {
                     data[channel][frame] = -1
-                    clipped = true
+                    clipped = clipped || AudioPeakMath.isClipping(peak: Double(-sample))
                 }
             }
         }
-        return clipped
+        return (clipped, maximumPeak)
     }
 
     private func applyMasterGain(_ volumeDB: Double, to buffer: AVAudioPCMBuffer) {

@@ -251,6 +251,7 @@ final class ProjectController {
                 self.registerUndo("Import Media")
                 var asset = asset
                 asset.waveformStatus = asset.kind == .videoAudio ? .notGenerated : .generating
+                asset.waveformFailureReason = nil
                 self.project.assets.append(asset)
                 if addToTimeline {
                     if self.project.timeline.tracks.isEmpty {
@@ -274,6 +275,11 @@ final class ProjectController {
     @discardableResult
     func addAssetToTimeline(_ assetID: UUID) -> TimelinePlacementResult? {
         addAssetToTimeline(assetID, at: playheadTime, trackIndex: 0)
+    }
+
+    @discardableResult
+    func addAssetToNewTrack(_ assetID: UUID) -> TimelinePlacementResult? {
+        addAssetToTimeline(assetID, at: playheadTime, trackIndex: project.timeline.tracks.count)
     }
 
     @discardableResult
@@ -1295,6 +1301,7 @@ final class ProjectController {
         guard let index = project.assets.firstIndex(where: { $0.id == assetID }) else { return }
         waveformService.invalidateCache(for: project.assets[index])
         waveformData.removeValue(forKey: assetID)
+        project.assets[index].waveformFailureReason = nil
         guard !project.assets[index].isMissing else {
             project.assets[index].waveformStatus = .missing
             notify()
@@ -1319,6 +1326,7 @@ final class ProjectController {
         project.assets[index].proxyCacheKey = nil
         project.assets[index].proxyStatus = project.assets[index].isMissing ? .missing : .generating
         project.assets[index].waveformStatus = project.assets[index].isMissing ? .missing : .notGenerated
+        project.assets[index].waveformFailureReason = nil
         notify()
         prepareAsset(assetID)
     }
@@ -1334,6 +1342,7 @@ final class ProjectController {
         project.assets[index].proxyStatus = .failed
         project.assets[index].proxyFailureReason = MediaProxyService.ProxyGenerationError.cancelled.localizedDescription
         project.assets[index].waveformStatus = .notGenerated
+        project.assets[index].waveformFailureReason = nil
         notify()
     }
 
@@ -1411,6 +1420,7 @@ final class ProjectController {
 
             project.assets[index].waveformCacheKey = nil
             project.assets[index].waveformStatus = .notGenerated
+            project.assets[index].waveformFailureReason = nil
             if project.assets[index].kind == .videoAudio {
                 project.assets[index].proxyPath = nil
                 project.assets[index].proxyCacheKey = nil
@@ -1486,6 +1496,7 @@ final class ProjectController {
             collectedProject.assets[index].proxyStatus = collectedProject.assets[index].kind == .videoAudio ? .generating : .none
             collectedProject.assets[index].waveformCacheKey = nil
             collectedProject.assets[index].waveformStatus = .notGenerated
+            collectedProject.assets[index].waveformFailureReason = nil
         }
         try fileService.save(collectedProject, to: projectFileURL)
         return projectFileURL
@@ -1956,6 +1967,7 @@ final class ProjectController {
         registerUndo("Relink Media")
         var updated = updatedAsset
         updated.waveformStatus = updated.kind == .videoAudio ? .notGenerated : .generating
+        updated.waveformFailureReason = nil
         updated.proxyStatus = updated.kind == .videoAudio ? .generating : .none
         project.assets[index] = updated
         notify(audioChanged: true)
@@ -1980,6 +1992,7 @@ final class ProjectController {
 
         asset.proxyStatus = .generating
         asset.proxyFailureReason = nil
+        asset.waveformFailureReason = nil
         project.assets[index] = asset
         notify()
 
@@ -2007,12 +2020,14 @@ final class ProjectController {
                 self.project.assets[currentIndex].proxyStatus = .ready
                 self.project.assets[currentIndex].proxyFailureReason = nil
                 self.project.assets[currentIndex].waveformStatus = .generating
+                self.project.assets[currentIndex].waveformFailureReason = nil
                 self.notify()
                 self.startWaveformGeneration(for: assetID)
             case .failure(let error):
                 self.project.assets[currentIndex].proxyStatus = .failed
                 self.project.assets[currentIndex].proxyFailureReason = error.localizedDescription
                 self.project.assets[currentIndex].waveformStatus = .failed
+                self.project.assets[currentIndex].waveformFailureReason = "Audio proxy generation failed: \(error.localizedDescription)"
                 self.waveformData.removeValue(forKey: assetID)
                 self.notify()
             }
@@ -2033,6 +2048,7 @@ final class ProjectController {
         guard !waveformGenerationIDs.contains(assetID) else { return }
 
         asset.waveformStatus = .generating
+        asset.waveformFailureReason = nil
         project.assets[index] = asset
         notify()
         waveformGenerationIDs.insert(assetID)
@@ -2054,9 +2070,11 @@ final class ProjectController {
                 self.waveformData[assetID] = data
                 self.project.assets[currentIndex].waveformCacheKey = data.cacheKey
                 self.project.assets[currentIndex].waveformStatus = .ready
-            case .failure:
+                self.project.assets[currentIndex].waveformFailureReason = nil
+            case .failure(let error):
                 self.waveformData.removeValue(forKey: assetID)
                 self.project.assets[currentIndex].waveformStatus = .failed
+                self.project.assets[currentIndex].waveformFailureReason = error.localizedDescription
             }
             self.notify()
         }
@@ -2236,6 +2254,7 @@ final class ProjectController {
             copy.assets[index].resolvedPath = nil
             copy.assets[index].waveformCacheKey = nil
             copy.assets[index].waveformStatus = .notGenerated
+            copy.assets[index].waveformFailureReason = nil
             copy.assets[index].proxyPath = nil
             copy.assets[index].proxyCacheKey = nil
             copy.assets[index].proxyStatus = .none
