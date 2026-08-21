@@ -1,88 +1,197 @@
-# LightAudio Editor
+<p align="center">
+  <img src="LightAudio%20Editor/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png" width="128" height="128" alt="LightAudio Editor app icon">
+</p>
 
-LightAudio Editor is a native macOS/AppKit MVP for lightweight multitrack audio editing.
+<h1 align="center">LightAudio Editor</h1>
 
-Implemented in this first pass:
+<p align="center">
+  A lightweight, native multitrack audio editor for macOS.<br>
+  Built with Swift, AppKit, AVFoundation, and AVFAudio.
+</p>
 
-- `.liau` JSON project save/open/save-as
-- Audio/video-file import metadata, with video treated as audio-only media
-- MP4/MOV/M4V video imports generate reusable audio-only proxy files outside `.liau` projects
-- Media bin with missing-media state
-- Compact default window layout with a View > Reset Window Layout command
-- Timeline clip placement, selection, move, trim, split, delete, and gain
-- Multi-selection, marquee selection, group move/nudge/delete/duplicate, and batch inspector edits
-- Responsive Selected Clip inspector with chunked Identity, Level & Pan, Fades, Automation, Processing, and Selection Summary sections
-- Clipboard editing for selected timeline clips with copy, cut, and paste at playhead
-- Timeline markers saved in `.liau` projects, with marker add/rename/delete and ruler navigation
-- Timeline In/Out points with visual range shading, saved in `.liau` projects
-- Loop Range playback toggle for looping the current In/Out range
-- Drag media from the media bin directly onto timeline tracks
-- Dragging media below existing tracks automatically creates the intended new track and places the clip there
-- Dragging media onto an A1/A2 track header targets that track at the current playhead; dropping lower in the header column creates the needed tracks
-- Multiple tracks with add-track, mute, solo, lock, rename, and vertical clip moves
-- Track height controls from the View menu, plus compact collapse/expand per track
-- Track reordering by dragging track headers, preserving clips and mix settings
-- Track header context menu actions for add above/below, duplicate, delete, collapse/expand, mute, solo, lock, rename, and reset height
-- Track rename by double-clicking the track name only, or from the track header context menu
-- Compact track header mix controls for track volume and pan, saved in `.liau` projects
-- Per-track output meters in the timeline header
-- Clip duplication and fade in/out editing from the inspector
-- Fade-in and fade-out curve choices: Linear, Equal Power, Ease In, and Ease Out
-- Timeline fade handles on clip edges for direct fade-duration editing, including double-click reset
-- Batch fade commands for selected clips: Apply Fade In, Apply Fade Out, and Remove Fades
-- Numeric gain/fade fields with live slider synchronization
-- Clip gain editing in dB, plus clip pan editing with exact numeric entry, playback pan, and export pan
-- Timeline clip overlays for gain, pan, and fade guides
-- Professional trim-edge hover and drag feedback with native resize cursor, on-clip trim handles, ghost edge preview, and time/duration tooltip
-- Timeline zoom controls and export progress/cancel sheet
-- Smooth continuous trackpad pinch zoom, anchored under the pointer, with a much wider zoom-in and zoom-out range
-- Timeline navigation commands for project start/end, previous/next marker, and previous/next clip edge
-- Snapping toggle with snapping to grid, playhead, markers, and clip edges
-- Smooth playback playhead updates with editable `HH:MM:SS.mmm` seeking, including seek-and-continue while playing
-- Follow-playhead toggle that keeps the timeline view near the playhead during playback
-- Dirty-state window title and save prompts before closing or opening another project
-- Timeline, track header, and media bin context menus for common editing actions
-- Option-drag duplication for selected clips, preserving relative timing and track placement
-- Ripple delete for selected clips from the timeline context menu or Edit menu
-- Circular toolbar buttons with larger click targets for transport, zoom, import, save, and export controls
-- Arrow-key clip nudging for selected clips
-- Asynchronous real waveform analysis with persistent cache files outside `.liau` projects
-- Higher-density timeline waveform rendering that follows clip trim ranges, aggregates only the visible region, and uses stronger visual normalization
-- Higher-density waveform analysis for normal audio and video-origin proxy audio, with versioned cache invalidation
-- Wider timeline zoom-out range plus View > Zoom to Fit Project for long edits
-- Media bin waveform status for pending, generating, ready, failed, and missing assets
-- Media bin search, filtering, and persistent sorting by name, duration, media type, status, import date, and used/unused state
-- Project-level media renaming, usage-count display, and safe removal of unused media without touching source files
-- Finder drag-and-drop import directly into the media bin, including over existing items and supported folders
-- Media bin right-click actions for import, add to timeline, rename media, reveal, relink, regenerate waveform/proxy, remove unused media, and media info
-- Media info sheet with display/original names, source/resolved paths, media type, duration, sample rate, channel count, size, import date, usage count, waveform state, and proxy state
-- Clip custom names and color labels, editable from the inspector or timeline context menu and saved in `.liau`
-- Clip volume automation keyframes, with envelope drawing, double-click add, drag editing, Delete-key removal, and `.liau` persistence
-- Clip volume automation is applied during playback, metering, full-project export, and In/Out range export
-- Inspector and clip context menu actions for adding volume keyframes, clearing clip volume automation, and non-destructive Normalize Clip analysis
-- Normalize Clip analyzes the visible trimmed audio region and updates clip gain without modifying source media
-- Explicit crossfades for overlapping clips on the same track, with Linear and Equal Power curves
-- Crossfade overlays on the timeline, plus context/menu commands to create, change curve, and remove crossfades
-- Preferences checkbox for optional automatic crossfade creation when clip moves/trims create overlaps
-- Overlapping clips without an explicit crossfade continue to mix normally
-- Project format compatibility for future pan/track automation and built-in clip effect models; EQ is modeled as a future built-in effect but has no active processing UI yet
-- Project menu cleanup tools for relinking missing media, locating folders, removing unused media, regenerating waveforms, retrying failed waveforms, and regenerating video proxies
-- File > Collect Project Media creates a portable collected folder with a copied `.liau` project and `Media/` sources
-- Playback of active, non-missing clips with track mute/solo handling, trim-aware scheduling, gain, pan, audible fade curves, and crossfades
-- Master volume, master output meter, and resettable clipping indicator in the bottom status area
-- Lightweight bottom status area for import, save, export, playback, relinking, locked-track, clipping, and blocked-operation feedback
-- WAV/AIFF native export backend with an export abstraction for future FFmpeg support
-- Export panel support for WAV, AIFF, M4A/AAC, MP3, and FLAC, with optional FFmpeg-backed compressed export
-- Export can render either the entire project or the current In/Out range
-- Export rendering applies clip, track, master mix controls, fade curves, crossfades, and warns when clipping is detected
-- Disabled normalize-on-export option is visible in the export panel as a future backend hook
-- Preferences panel for configuring and testing an external FFmpeg encoder
-- Preferences can clear all app-generated caches: waveforms, video-proxy audio, and recovery snapshots; `.liau` projects and original media are never removed
-- Autosave recovery snapshots stored outside the saved project file
-- Recovery prompt only after an unexpected shutdown for a dirty saved project with a newer unconsumed snapshot
-- Missing-media warning, single-file relink, folder locate, and duration-based verification
-- Projects with missing media open for relinking, but timeline editing, playback, and export are blocked until all media is online
-- Undo/redo registration for editing operations
-- Expanded undo/redo coverage for group edits, markers, clipboard edits, snapping, and track operations
+LightAudio Editor provides a professional timeline-oriented workflow for arranging, trimming, mixing, and exporting audio. Video files can be imported as audio-only sources, while original media remains untouched throughout the editing process.
 
-Open `LightAudio Editor.xcodeproj` in Xcode and build the `LightAudio Editor` target.
+The app targets **macOS Catalina 10.15 and later** and uses the readable JSON-based `.liau` project format.
+
+## Highlights
+
+- Native AppKit interface with a media bin, fixed track headers, scrollable timeline, inspector, toolbar, and status area
+- Multiple audio tracks with reorder, collapse, height adjustment, mute, solo, lock, volume, pan, and level meters
+- Real waveform analysis and persistent caching for audio and video-origin proxy media
+- Drag-and-drop import from Finder and direct placement from the media bin onto existing or automatically created tracks
+- Non-destructive clip move, trim, split, duplicate, ripple delete, fades, crossfades, gain, pan, naming, and color labels
+- Multi-selection, marquee selection, grouped movement, clipboard editing, snapping, markers, and undo/redo
+- Clip volume automation envelopes with editable keyframes applied during playback and export
+- Smooth playback with seeking, audible fades, metering, clipping feedback, loop ranges, and follow-playhead mode
+- Full-project or In/Out range export to WAV, AIFF, M4A, MP3, and FLAC
+- Crash recovery, missing-media relinking, portable media collection, and project cleanup tools
+
+## Import and Export
+
+| Direction | Formats | Backend |
+| --- | --- | --- |
+| Audio import | MP3, WAV, M4A, AAC, FLAC, AIFF/AIF, CAF | AVFoundation / AVAudioFile |
+| Video import | MP4, MOV, M4V, MKV, AVI | Audio-only proxy through AVFoundation |
+| Native export | WAV, AIFF | Built-in renderer |
+| Optional export | M4A/AAC, MP3, FLAC | User-provided FFmpeg |
+
+Actual decoding support depends on the codecs available to AVFoundation on the current macOS version. MP4, MOV, and M4V provide the most reliable video-origin import path. Video is never displayed or edited; only its audio stream is used.
+
+For compressed export, install FFmpeg and select or test its executable in **LightAudio Editor > Preferences**. The app also checks common Homebrew locations automatically:
+
+```bash
+brew install ffmpeg
+```
+
+FFmpeg is optional. The app launches and native WAV/AIFF export remains available without it.
+
+## Timeline Editing
+
+The timeline supports:
+
+- Clip placement across multiple tracks, including automatic track creation when media is dropped below the last track
+- Move, source trim, split, duplicate, Option-drag duplicate, delete, ripple delete, and arrow-key nudge
+- Command-click and Shift-click multi-selection, plus drag marquee selection
+- Copy, cut, and paste at the playhead while preserving relative track and timing relationships
+- Playhead, clip-edge, marker, and grid snapping with a visible snap guide
+- Linear, equal-power, ease-in, and ease-out fade curves
+- Explicit linear or equal-power crossfades between overlapping clips
+- Clip and track gain/pan, master volume, per-track meters, master metering, and clipping indication
+- Clip volume automation keyframes with linear interpolation
+- In/Out points, loop playback, markers, track collapse/reorder, variable track height, and zoom-to-fit
+- Smooth pointer-anchored trackpad pinch zoom over a wide timeline range
+
+Locked tracks remain audible but reject editing, pasting, trimming, deletion, and media drops. Mute and solo state is applied consistently during playback, metering, and export.
+
+## Projects and Media Safety
+
+`.liau` files are readable JSON documents containing timeline structure, media references, mix settings, markers, view state, and automation. They do not embed source audio, waveform arrays, or video proxies.
+
+- Original media is never modified by editing, normalization, proxy generation, or export.
+- Relative media paths are saved when possible.
+- Missing media remains represented in the project and can be relinked individually or by locating a folder.
+- Editing, playback, and export are intentionally blocked until all missing media has been relinked.
+- **File > Collect Project Media** creates a portable copy containing a `.liau` project and a `Media/` folder.
+- Export cannot overwrite imported source media or generated proxies.
+
+## Recovery and Caches
+
+App-generated data is stored outside both the `.app` bundle and `.liau` project files:
+
+```text
+~/Library/Application Support/LightAudio Editor/
+|-- Media Proxies/
+|-- Recovery/
+`-- Waveforms/
+```
+
+Waveform and proxy caches are validated against source identity and regenerated when stale. Recovery snapshots are created only for dirty projects that have a real saved project path. After an unexpected shutdown, a newer unconsumed snapshot can be restored or declined.
+
+**LightAudio Editor > Preferences > Clear App Cache** removes waveform caches, proxy audio, and recovery snapshots. It never removes `.liau` projects or original media, and cache clearing is blocked while an export is active.
+
+## Build from Source
+
+Requirements:
+
+- macOS 10.15 or later
+- A recent Xcode release with the macOS SDK
+- Swift 5 toolchain
+- FFmpeg only if M4A, MP3, or FLAC export is required
+
+Clone and open the project:
+
+```bash
+git clone https://github.com/ythdzys/LightAudio-Editor.git
+cd LightAudio-Editor
+open "LightAudio Editor.xcodeproj"
+```
+
+Select the **LightAudio Editor** scheme and run it on **My Mac**, or build from Terminal:
+
+```bash
+xcodebuild \
+  -project "LightAudio Editor.xcodeproj" \
+  -scheme "LightAudio Editor" \
+  -configuration Debug \
+  -derivedDataPath Build/DerivedData \
+  build
+```
+
+The built app is written to:
+
+```text
+Build/DerivedData/Build/Products/Debug/LightAudio Editor.app
+```
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Space` | Play or pause |
+| `Command-S` | Save project |
+| `Command-O` | Open project |
+| `Command-I` | Import media |
+| `Command-E` | Export |
+| `Command-Z` / `Shift-Command-Z` | Undo / redo |
+| `Command-C` / `Command-X` / `Command-V` | Copy / cut / paste clips |
+| `Command-D` | Duplicate selected clips |
+| `Delete` | Delete selected clips or keyframe |
+| `S` or `Command-B` | Toggle razor tool |
+| `I` / `O` | Set In / Out point |
+| `Option-X` | Clear In/Out range |
+| `L` | Toggle loop range |
+| `M` | Add marker |
+| `Shift-M` / `Shift-Option-M` | Next / previous marker |
+| `N` | Toggle snapping |
+| `Command-=` / `Command--` | Zoom in / out |
+| `Option-Command-=` / `Option-Command--` | Increase / decrease track height |
+| `Left Arrow` / `Right Arrow` | Nudge selected clips |
+| `Option-Left Arrow` / `Option-Right Arrow` | Previous / next clip edge |
+| `Home` / `End` | Jump to project start / end |
+
+Standard macOS shortcuts also apply to New, Save As, Preferences, and window commands.
+
+## Architecture
+
+```text
+LightAudio Editor/
+|-- App/         App lifecycle, main window, project coordination, recovery
+|-- Models/      Project, media, timeline, clip, track, waveform, export data
+|-- Services/    Import, relink, proxy, waveform, playback, render, export, cache
+|-- UI/          Media bin, timeline, clip, track header, inspector, dialogs
+`-- Utilities/   Timecode, format helpers, metadata hashing
+```
+
+The playback and native export paths share the same timeline audio-source processing model so trims, automation, fades, crossfades, clip/track mix controls, and master gain remain closely aligned.
+
+## Tests
+
+The regression suite covers project validation, recovery state, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, and cache-sensitive workflows.
+
+```bash
+xcodebuild \
+  -project "LightAudio Editor.xcodeproj" \
+  -scheme "LightAudio Editor" \
+  -configuration Debug \
+  -derivedDataPath Build/DerivedData \
+  test
+```
+
+Current verification: **43 tests passing**.
+
+## Current Limitations
+
+- No video preview or video editing features
+- No Audio Unit, VST, or other plug-in hosting
+- Three-band EQ exists only as a future-compatible project model and is not processed
+- Normalize-on-export is not implemented; the export option remains disabled
+- M4A, MP3, and FLAC export require a compatible external FFmpeg build
+- No signed or notarized release package is currently published; build the app from source
+
+## Technology
+
+- Swift 5
+- AppKit
+- AVFoundation / AVFAudio / AVAudioEngine
+- CryptoKit for stable cache and metadata identities
+- Optional FFmpeg integration through a replaceable export backend
