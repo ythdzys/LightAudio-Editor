@@ -33,17 +33,13 @@ The Universal app supports **Intel Macs on macOS Catalina 10.15 and later** and 
 | Audio import | MP3, WAV, M4A, AAC, FLAC, AIFF/AIF, CAF | AVFoundation / AVAudioFile |
 | Video import | MP4, MOV, M4V, MKV, AVI | Audio-only proxy through AVFoundation |
 | Native export | WAV, AIFF | Built-in renderer |
-| Optional export | M4A/AAC, MP3, FLAC | User-provided FFmpeg |
+| Compressed/lossless export | M4A/AAC, MP3, FLAC | Bundled Universal FFmpeg helper |
 
 Actual decoding support depends on the codecs available to AVFoundation on the current macOS version. MP4, MOV, and M4V provide the most reliable video-origin import path. Video is never displayed or edited; only its audio stream is used.
 
-For compressed export, install FFmpeg and select or test its executable in **LightAudio Editor > Preferences**. The app also checks common Homebrew locations automatically:
+M4A, MP3, and FLAC work without a separate install. LightAudio Editor includes a narrowly configured LGPL FFmpeg/LAME command-line helper for Intel and Apple silicon Macs and selects it automatically. **LightAudio Editor > Preferences** can still select and test a custom FFmpeg executable as an optional override; clearing that field returns to the bundled helper.
 
-```bash
-brew install ffmpeg
-```
-
-FFmpeg is optional. The app launches and native WAV/AIFF export remains available without it.
+MP3 export accepts LAME-compatible sample rates up to 48 kHz. If the project default or a previously selected rate is not compatible with MP3, the export panel selects 48 kHz automatically and validates the setting before rendering begins. WAV, AIFF, M4A, and FLAC retain the higher sample-rate options.
 
 ## Timeline Editing
 
@@ -97,7 +93,6 @@ Requirements:
 - Apple silicon Mac: macOS 11.0 or later
 - A recent Xcode release with the macOS SDK
 - Swift 5 toolchain
-- FFmpeg only if M4A, MP3, or FLAC export is required
 
 Clone and open the project:
 
@@ -126,7 +121,7 @@ Build/DerivedData/Build/Products/Debug/LightAudio Editor.app
 
 ## Beta Distribution
 
-Beta 1 is version `0.1.0` build `1` and uses bundle identifier `com.ythdzys.LightAudioEditor`. The repository includes scripts for a single Universal `arm64`/`x86_64` archive, Developer ID signing, Apple notarization, ticket stapling, Gatekeeper validation, and ZIP packaging. Packaging fails if either architecture is absent or if the Intel and Apple silicon slices do not retain their macOS 10.15 and 11.0 minimum versions respectively.
+Beta 2 is version `0.1.1` build `2` and uses bundle identifier `com.ythdzys.LightAudioEditor`. The repository includes scripts for a single Universal `arm64`/`x86_64` archive, Developer ID signing, Apple notarization, ticket stapling, Gatekeeper validation, and ZIP packaging. Packaging fails if the app or bundled encoder is missing either architecture, if the required compressed-audio encoders are unavailable, or if the Intel and Apple silicon slices do not retain their macOS 10.15 and 11.0 minimum versions respectively.
 
 See [BETA_RELEASE.md](BETA_RELEASE.md) for packaging instructions and the optional Apple Developer setup. Without a Developer ID identity, the script seals the complete app with an ad-hoc signature and labels the ZIP `ADHOC-UNNOTARIZED`; testers must approve that build once in **Privacy & Security**. Developer ID signing and notarization remain the recommended path for public distribution.
 
@@ -184,7 +179,7 @@ xcodebuild \
   test
 ```
 
-Current verification: **55 tests passing** on both Apple silicon and Intel build paths for Beta 2.
+Current verification: **58 tests passing** on both Apple silicon and Intel build paths, including real bundled M4A, MP3, and FLAC exports.
 
 ## Current Limitations
 
@@ -192,7 +187,7 @@ Current verification: **55 tests passing** on both Apple silicon and Intel build
 - No Audio Unit, VST, or other plug-in hosting
 - Three-band EQ exists only as a future-compatible project model and is not processed
 - Normalize-on-export is not implemented; the export option remains disabled
-- M4A, MP3, and FLAC export require a compatible external FFmpeg build
+- The bundled encoder is intentionally limited to AAC/M4A, MP3, and FLAC output from LightAudio Editor's rendered WAV mix; it is not a general-purpose FFmpeg distribution
 - Beta packages are ad-hoc signed and unnotarized; Gatekeeper approval is required on first launch
 
 ## Technology
@@ -201,4 +196,14 @@ Current verification: **55 tests passing** on both Apple silicon and Intel build
 - AppKit
 - AVFoundation / AVFAudio / AVAudioEngine
 - CryptoKit for stable cache and metadata identities
-- Optional FFmpeg integration through a replaceable export backend
+- Bundled Universal FFmpeg/LAME helper through a replaceable external-process export backend
+
+## Bundled Encoder and Licensing
+
+The included helper uses FFmpeg 9.0.1 and LAME 4.0, built without FFmpeg's GPL or nonfree configure options. License texts and exact build metadata ship in the app under `Contents/Resources/BundledEncoder`, and the reproducible build is documented in [ThirdParty/FFmpeg/README.md](ThirdParty/FFmpeg/README.md).
+
+```bash
+./Scripts/build-bundled-ffmpeg.sh
+```
+
+`Scripts/build-beta.sh` also prepares a corresponding-source ZIP containing the verified upstream source archives and build recipe. Publish that source ZIP beside every beta binary that contains the helper.

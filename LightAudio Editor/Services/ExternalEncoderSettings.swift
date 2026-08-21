@@ -9,25 +9,79 @@ enum ExternalEncoderSettings {
 
     static var ffmpegPath: String? {
         get {
-            let stored = UserDefaults.standard.string(forKey: ffmpegPathKey)
-            if let stored = stored, !stored.isEmpty { return stored }
-            return detectedFFmpegPath()
+            preferredFFmpegPath(
+                configuredPath: configuredFFmpegPath,
+                bundledPath: bundledFFmpegPath,
+                systemCandidates: systemFFmpegCandidates
+            )
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: ffmpegPathKey)
+            configuredFFmpegPath = newValue
+        }
+    }
+
+    /// An optional user override. A blank value deliberately falls back to the
+    /// signed helper inside the app bundle, then to a compatible system install.
+    static var configuredFFmpegPath: String? {
+        get {
+            normalizedPath(UserDefaults.standard.string(forKey: ffmpegPathKey))
+        }
+        set {
+            if let path = normalizedPath(newValue) {
+                UserDefaults.standard.set(path, forKey: ffmpegPathKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: ffmpegPathKey)
+            }
             encoderLock.lock()
             cachedEncoderNames.removeAll()
             encoderLock.unlock()
         }
     }
 
+    static var bundledFFmpegPath: String? {
+        let bundles = [Bundle.main, Bundle(for: BundleLocator.self)]
+        for bundle in bundles {
+            if let path = bundle.path(forResource: "ffmpeg", ofType: nil, inDirectory: "BundledEncoder"),
+               FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        return nil
+    }
+
     static func detectedFFmpegPath() -> String? {
-        let candidates = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg"
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        preferredFFmpegPath(
+            configuredPath: nil,
+            bundledPath: bundledFFmpegPath,
+            systemCandidates: systemFFmpegCandidates
+        )
+    }
+
+    static func sourceDescription(for path: String) -> String {
+        if pathsReferToSameFile(path, bundledFFmpegPath) {
+            return "Bundled FFmpeg"
+        }
+        if pathsReferToSameFile(path, configuredFFmpegPath) {
+            return "Custom FFmpeg"
+        }
+        return "System FFmpeg"
+    }
+
+    static func preferredFFmpegPath(
+        configuredPath: String?,
+        bundledPath: String?,
+        systemCandidates: [String],
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String? {
+        if let configuredPath = normalizedPath(configuredPath) {
+            // Keep an invalid explicit override visible so Preferences can report it,
+            // instead of silently exporting with a different binary.
+            return configuredPath
+        }
+        if let bundledPath = normalizedPath(bundledPath), isExecutable(bundledPath) {
+            return bundledPath
+        }
+        return systemCandidates.first(where: isExecutable)
     }
 
     static func ffmpegVersion(path: String) -> String? {
@@ -126,4 +180,26 @@ enum ExternalEncoderSettings {
         let date = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
         return "\(path)|\(size)|\(date)"
     }
+
+    private static let systemFFmpegCandidates = [
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg"
+    ]
+
+    private static func normalizedPath(_ path: String?) -> String? {
+        guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return nil
+        }
+        return (path as NSString).expandingTildeInPath
+    }
+
+    private static func pathsReferToSameFile(_ lhs: String?, _ rhs: String?) -> Bool {
+        guard let lhs = normalizedPath(lhs), let rhs = normalizedPath(rhs) else { return false }
+        return URL(fileURLWithPath: lhs).resolvingSymlinksInPath().standardizedFileURL
+            == URL(fileURLWithPath: rhs).resolvingSymlinksInPath().standardizedFileURL
+    }
+
+    private final class BundleLocator: NSObject {}
 }

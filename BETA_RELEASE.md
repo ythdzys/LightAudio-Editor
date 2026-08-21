@@ -1,6 +1,6 @@
 # LightAudio Editor Beta Release
 
-LightAudio Editor Beta 1 uses bundle identifier `com.ythdzys.LightAudioEditor`, marketing version `0.1.0`, and build number `1`.
+LightAudio Editor Beta 2 uses bundle identifier `com.ythdzys.LightAudioEditor`, marketing version `0.1.1`, and build number `2`.
 
 The release is one Universal app containing both `x86_64` and `arm64`. Its Intel slice supports macOS Catalina 10.15 and later. Its Apple silicon slice supports macOS Big Sur 11.0 and later, which is the first macOS release available for Apple silicon Macs.
 
@@ -53,8 +53,10 @@ The script:
 - Archives the Release configuration for generic macOS.
 - Requires both `arm64` and `x86_64` in the executable.
 - Requires an Intel minimum system version of macOS 10.15 and an Apple silicon minimum of macOS 11.0.
+- Validates the bundled FFmpeg helper's architectures, deployment targets, and AAC/MP3/FLAC encoders.
+- Packages the exact verified FFmpeg/LAME source archives and reproducible build script in a separate corresponding-source ZIP.
 - Applies version, build, and bundle metadata.
-- Verifies the Developer ID signature.
+- Signs the nested encoder helper before resealing and verifying the complete app.
 - Places a signed but explicitly unnotarized ZIP under `Build/Beta/`.
 
 Running the script without signing variables creates an ad-hoc-signed Universal build named `ADHOC-UNNOTARIZED`. The script seals the complete app bundle and verifies its signature, architectures, deployment targets, version, build number, and bundle identifier before packaging it. Ad-hoc signing requires no Apple Developer account, but it does not establish the developer's identity and does not satisfy Gatekeeper automatically.
@@ -76,11 +78,11 @@ NOTARYTOOL_PROFILE="LightAudioEditor-notary" \
 
 The script submits with `notarytool`, waits for acceptance, staples and validates the ticket, runs a Gatekeeper assessment, and creates the final tester ZIP plus a SHA-256 checksum.
 
-Only the final `LightAudio-Editor-0.1.0-beta-1-macOS.zip` should be attached to the GitHub prerelease.
+Attach both the final `LightAudio-Editor-0.1.1-beta-2-macOS.zip` and the generated `LightAudio-Editor-0.1.1-Bundled-Encoder-Source.zip` to the GitHub prerelease. The second asset provides corresponding source for the LGPL FFmpeg/LAME helper distributed inside the app.
 
 ## Versioning Future Builds
 
-- Keep `MARKETING_VERSION` at `0.1.0` for Beta 1 fixes.
+- Keep `MARKETING_VERSION` at `0.1.1` for Beta 2 fixes.
 - Increment `CURRENT_PROJECT_VERSION` for every distributed build.
 - Change the marketing version only for a new user-facing beta or release.
-- Tag the first beta source as `v0.1.0-beta.1` after tests, notarization, and clean-machine verification pass.
+- Tag the Beta 2 source as `v0.1.1-beta.2` after tests and packaging checks pass. Replace the ad-hoc asset with a signed and notarized build when Developer ID credentials become available.

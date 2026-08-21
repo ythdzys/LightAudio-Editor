@@ -60,6 +60,8 @@ enum ExportRange: Codable, Equatable {
 }
 
 struct ExportSettings: Codable {
+    static let mp3SupportedSampleRates: [Double] = [8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000]
+
     var format: ExportFormat
     var sampleRate: Double
     var channelCount: Int
@@ -123,6 +125,9 @@ struct ExportSettings: Codable {
         guard sampleRate.isFinite, sampleRate >= 8_000, sampleRate <= 384_000 else {
             throw ExportSettingsValidationError("Choose a valid output sample rate.")
         }
+        guard Self.supports(sampleRate: sampleRate, for: format) else {
+            throw ExportSettingsValidationError("MP3 export supports 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, or 48000 Hz. Choose a compatible sample rate.")
+        }
         guard (1...2).contains(channelCount) else {
             throw ExportSettingsValidationError("Choose mono or stereo output.")
         }
@@ -141,6 +146,12 @@ struct ExportSettings: Codable {
                 throw ExportSettingsValidationError("The selected export range is invalid.")
             }
         }
+    }
+
+    static func supports(sampleRate: Double, for format: ExportFormat) -> Bool {
+        guard sampleRate.isFinite else { return false }
+        guard format == .mp3 else { return true }
+        return mp3SupportedSampleRates.contains { abs($0 - sampleRate) < 0.5 }
     }
 }
 

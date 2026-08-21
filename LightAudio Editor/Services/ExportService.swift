@@ -296,14 +296,14 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
     static func availability(for format: ExportFormat) -> (available: Bool, reason: String?) {
         switch format {
         case .wav, .aiff:
-            return (true, nil)
+            return (true, "Available (Native)")
         case .m4a, .mp3, .flac:
             guard let ffmpegPath = ExternalEncoderSettings.ffmpegPath,
                   FileManager.default.isExecutableFile(atPath: ffmpegPath) else {
-                return (false, "\(format.rawValue) export requires a valid FFmpeg executable. Configure FFmpeg in Preferences.")
+                return (false, "The bundled encoder is unavailable. Choose a custom FFmpeg executable in Preferences.")
             }
             guard let encoders = ExternalEncoderSettings.audioEncoderNames(path: ffmpegPath) else {
-                return (false, "Could not read supported audio encoders from the configured FFmpeg binary.")
+                return (false, "Could not read supported audio encoders from \(ExternalEncoderSettings.sourceDescription(for: ffmpegPath)).")
             }
             let requiredEncoder: String
             switch format {
@@ -313,9 +313,9 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
             case .wav, .aiff: requiredEncoder = ""
             }
             guard encoders.contains(requiredEncoder) else {
-                return (false, "The configured FFmpeg binary does not include the \(requiredEncoder) audio encoder required for \(format.rawValue) export.")
+                return (false, "\(ExternalEncoderSettings.sourceDescription(for: ffmpegPath)) does not include the \(requiredEncoder) audio encoder required for \(format.rawValue) export.")
             }
-            return (true, nil)
+            return (true, "Available (\(ExternalEncoderSettings.sourceDescription(for: ffmpegPath)))")
         }
     }
 
@@ -326,7 +326,7 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
         let availability = Self.availability(for: settings.format)
         guard availability.available,
               let ffmpegPath = ExternalEncoderSettings.ffmpegPath else {
-            throw NSError(domain: "LightAudio", code: 30, userInfo: [NSLocalizedDescriptionKey: availability.reason ?? "\(settings.format.rawValue) export requires an external encoder. Configure FFmpeg in Preferences."])
+            throw NSError(domain: "LightAudio", code: 30, userInfo: [NSLocalizedDescriptionKey: availability.reason ?? "The bundled encoder is unavailable. Choose a custom FFmpeg executable in Preferences."])
         }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-\(UUID().uuidString).wav")
@@ -460,7 +460,7 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
             throw NSError(
                 domain: "LightAudioFFmpeg",
                 code: 31,
-                userInfo: [NSLocalizedDescriptionKey: "External encoder timed out. Check the configured FFmpeg binary and try again."]
+                userInfo: [NSLocalizedDescriptionKey: "Audio encoding timed out. Check the FFmpeg setting in Preferences and try again."]
             )
         }
         guard process.terminationStatus == 0 else {

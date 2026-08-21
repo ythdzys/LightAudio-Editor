@@ -129,6 +129,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
         let format = selectedFormat()
         let compressed = format == .m4a || format == .mp3
         bitratePopup.isHidden = !compressed
+        updateSampleRateOptions(for: format)
 
         let requestID = UUID()
         availabilityRequestID = requestID
@@ -151,6 +152,21 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
                     self.applyAvailability(availability)
                 }
             }
+        }
+    }
+
+    private func updateSampleRateOptions(for format: ExportFormat) {
+        let projectRateSupported = ExportSettings.supports(sampleRate: project.sampleRate, for: format)
+        if let projectDefaultItem = sampleRatePopup.item(at: 0) {
+            projectDefaultItem.title = projectRateSupported
+                ? "Project default"
+                : "Project default (not available for MP3)"
+            projectDefaultItem.isEnabled = projectRateSupported
+        }
+        sampleRatePopup.item(at: 3)?.isEnabled = format != .mp3
+
+        if !ExportSettings.supports(sampleRate: selectedSampleRate(), for: format) {
+            sampleRatePopup.selectItem(at: 2)
         }
     }
 

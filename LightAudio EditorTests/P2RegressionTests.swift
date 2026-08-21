@@ -710,6 +710,91 @@ final class P2RegressionTests: XCTestCase {
         XCTAssertEqual(encoders, Set(["aac", "flac"]))
     }
 
+    func testEncoderResolutionPrefersCustomThenBundledThenSystem() {
+        let executablePaths = Set(["/bundled/ffmpeg", "/system/ffmpeg"])
+        let isExecutable: (String) -> Bool = { executablePaths.contains($0) }
+
+        XCTAssertEqual(
+            ExternalEncoderSettings.preferredFFmpegPath(
+                configuredPath: "/custom/ffmpeg",
+                bundledPath: "/bundled/ffmpeg",
+                systemCandidates: ["/system/ffmpeg"],
+                isExecutable: isExecutable
+            ),
+            "/custom/ffmpeg"
+        )
+        XCTAssertEqual(
+            ExternalEncoderSettings.preferredFFmpegPath(
+                configuredPath: nil,
+                bundledPath: "/bundled/ffmpeg",
+                systemCandidates: ["/system/ffmpeg"],
+                isExecutable: isExecutable
+            ),
+            "/bundled/ffmpeg"
+        )
+        XCTAssertEqual(
+            ExternalEncoderSettings.preferredFFmpegPath(
+                configuredPath: nil,
+                bundledPath: "/missing/ffmpeg",
+                systemCandidates: ["/system/ffmpeg"],
+                isExecutable: isExecutable
+            ),
+            "/system/ffmpeg"
+        )
+    }
+
+    func testBundledEncoderSupportsAndExportsCompressedFormats() throws {
+        let previousCustomPath = ExternalEncoderSettings.configuredFFmpegPath
+        ExternalEncoderSettings.configuredFFmpegPath = nil
+        defer { ExternalEncoderSettings.configuredFFmpegPath = previousCustomPath }
+
+        let encoderPath = try XCTUnwrap(ExternalEncoderSettings.bundledFFmpegPath)
+        XCTAssertEqual(ExternalEncoderSettings.ffmpegPath, encoderPath)
+        XCTAssertEqual(ExternalEncoderSettings.sourceDescription(for: encoderPath), "Bundled FFmpeg")
+        let encoders = try XCTUnwrap(ExternalEncoderSettings.audioEncoderNames(path: encoderPath))
+        XCTAssertTrue(encoders.isSuperset(of: ["aac", "libmp3lame", "flac"]))
+
+        let sourceURL = try makeMonoSourceFile(sample: 0.25, duration: 0.15)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+        let asset = MediaAsset(
+            displayName: "Bundled Encoder Source",
+            originalPath: sourceURL.path,
+            relativePath: nil,
+            resolvedPath: sourceURL.path,
+            kind: .audio,
+            metadata: MediaFileMetadata(fileName: sourceURL.lastPathComponent, fileSize: nil, duration: 0.15, sampleRate: 44_100, channelCount: 1, checksum: nil),
+            waveformCacheKey: nil
+        )
+        let project = Project(
+            name: "Bundled Encoder Export",
+            sampleRate: 44_100,
+            duration: 0.15,
+            assets: [asset],
+            timeline: Timeline(tracks: [Track(name: "A1", clips: [Clip(sourceAssetID: asset.id, timelineStart: 0, sourceStart: 0, sourceEnd: 0.15)])]),
+            viewState: TimelineViewState(),
+            lastSavedAt: nil
+        )
+
+        for (format, extensionName, bitrate, sampleRate) in [
+            (ExportFormat.m4a, "m4a", 128, 44_100.0),
+            (.mp3, "mp3", 192, 48_000.0),
+            (.flac, "flac", nil, 96_000.0)
+        ] {
+            let outputURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("LightAudio-Bundled-\(UUID().uuidString).\(extensionName)")
+            defer { try? FileManager.default.removeItem(at: outputURL) }
+            let result = try ExternalEncoderExportBackend().export(
+                project: project,
+                settings: ExportSettings(format: format, sampleRate: sampleRate, channelCount: 2, bitrate: bitrate, outputURL: outputURL),
+                cancellationToken: ExportCancellationToken(),
+                progress: { _ in }
+            )
+            let attributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)
+            XCTAssertGreaterThan((attributes[.size] as? NSNumber)?.intValue ?? 0, 32, "\(format.rawValue) export should contain encoded audio.")
+            XCTAssertFalse(result.clippingDetected)
+        }
+    }
+
     func testEncoderProbeTimesOutForAStalledBinary() throws {
         let scriptURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-FFmpeg-Stall-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: scriptURL) }
@@ -726,9 +811,9 @@ final class P2RegressionTests: XCTestCase {
         let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-Cancelled-\(UUID().uuidString).m4a")
         let scriptURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-FFmpeg-Cancel-\(UUID().uuidString)")
         let startedURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-FFmpeg-Cancel-Started-\(UUID().uuidString)")
-        let previousFFmpegPath = ExternalEncoderSettings.ffmpegPath
+        let previousFFmpegPath = ExternalEncoderSettings.configuredFFmpegPath
         defer {
-            ExternalEncoderSettings.ffmpegPath = previousFFmpegPath
+            ExternalEncoderSettings.configuredFFmpegPath = previousFFmpegPath
             try? FileManager.default.removeItem(at: sourceURL)
             try? FileManager.default.removeItem(at: outputURL)
             try? FileManager.default.removeItem(at: scriptURL)
@@ -747,7 +832,7 @@ final class P2RegressionTests: XCTestCase {
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
-        ExternalEncoderSettings.ffmpegPath = scriptURL.path
+        ExternalEncoderSettings.configuredFFmpegPath = scriptURL.path
 
         let asset = MediaAsset(
             displayName: "Tone",
@@ -1424,6 +1509,29 @@ final class P2RegressionTests: XCTestCase {
             cancellationToken: ExportCancellationToken(),
             progress: { _ in }
         ))
+    }
+
+    func testMP3ExportRejectsUnsupportedSampleRateBeforeRendering() {
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-Invalid-MP3-\(UUID().uuidString).mp3")
+        let invalidSettings = ExportSettings(
+            format: .mp3,
+            sampleRate: 96_000,
+            channelCount: 2,
+            bitrate: 256,
+            outputURL: outputURL
+        )
+
+        XCTAssertThrowsError(try invalidSettings.validate()) { error in
+            XCTAssertTrue(error.localizedDescription.contains("MP3 export supports"))
+        }
+        XCTAssertNoThrow(try ExportSettings(
+            format: .mp3,
+            sampleRate: 48_000,
+            channelCount: 2,
+            bitrate: 256,
+            outputURL: outputURL
+        ).validate())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outputURL.path))
     }
 
     func testProjectValidationRejectsNonFiniteViewStateAndClampsExtremeZoom() throws {

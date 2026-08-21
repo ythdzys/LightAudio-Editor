@@ -1,0 +1,19 @@
+Bundled encoder build information
+
+FFmpeg version: 9.0.1
+FFmpeg source: https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz
+FFmpeg SHA-256: cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635
+
+LAME version: 4.0
+LAME source: https://downloads.sourceforge.net/project/lame/lame/4.0/lame-4.0.tar.gz
+LAME SHA-256: 3df5124d5ad3a98312ffd7ba6a9b36230e4f8a3e66d3ce0f425e336c32d216eb
+
+The helper is a separate executable built without FFmpeg's GPL or nonfree
+configuration options. It contains only the audio components needed to decode
+the app's temporary WAV render and encode AAC/M4A, MP3 through libmp3lame, and
+FLAC. The complete reproducible build command is Scripts/build-bundled-ffmpeg.sh
+in the LightAudio Editor source repository.
+
+Architectures and deployment targets:
+- x86_64: macOS 10.15
+- arm64: macOS 11.0

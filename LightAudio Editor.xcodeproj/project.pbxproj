@@ -43,6 +43,7 @@
 		BF0000010000000000000025 /* ApplicationCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001025 /* ApplicationCacheService.swift */; };
 		BF0000010000000000000024 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001024 /* Assets.xcassets */; };
 		BF0000010000000000000026 /* P2RegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001026 /* P2RegressionTests.swift */; };
+		BF0000010000000000000027 /* BundledEncoder in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001027 /* BundledEncoder */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -85,6 +86,7 @@
 		BF0000010000000000001025 /* ApplicationCacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/ApplicationCacheService.swift"; sourceTree = "<group>"; };
 		BF0000010000000000001024 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BF0000010000000000001026 /* P2RegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = P2RegressionTests.swift; sourceTree = "<group>"; };
+		BF0000010000000000001027 /* BundledEncoder */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/BundledEncoder; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -126,6 +128,7 @@
 			children = (
 				BF0000010000000000001000 /* Info.plist */,
 				BF0000010000000000001024 /* Assets.xcassets */,
+				BF0000010000000000001027 /* BundledEncoder */,
 				BF0000010000000000001001 /* AppDelegate.swift */,
 				BF0000010000000000001002 /* MainWindowController.swift */,
 				BF0000010000000000001003 /* ProjectController.swift */,
@@ -226,6 +229,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF0000010000000000000024 /* Assets.xcassets in Resources */,
+				BF0000010000000000000027 /* BundledEncoder in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
