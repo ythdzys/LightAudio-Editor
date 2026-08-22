@@ -41,6 +41,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         projectController.delegate = self
         setupUI()
         projectDidChange(projectController.project)
+        prepareBundledEncoder()
     }
 
     required init?(coder: NSCoder) {
@@ -64,6 +65,15 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         window?.layoutIfNeeded()
         resizeTimeline(for: projectController.project)
         timelineView.needsDisplay = true
+    }
+
+    private func prepareBundledEncoder() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard !ExternalEncoderSettings.bundledEncoderSupportsRequiredFormats() else { return }
+            DispatchQueue.main.async {
+                self?.showStatus("Bundled encoder unavailable; reinstall the app to enable M4A, MP3, and FLAC export")
+            }
+        }
     }
 
     private func setupUI() {

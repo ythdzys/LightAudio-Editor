@@ -292,15 +292,24 @@ final class NativeAudioExportBackend: AudioExportBackend {
 
 final class ExternalEncoderExportBackend: AudioExportBackend {
     private let nativeBackend = NativeAudioExportBackend()
+    private let encoderPathProvider: () -> String?
+
+    init(encoderPathProvider: @escaping () -> String? = { ExternalEncoderSettings.ffmpegPath }) {
+        self.encoderPathProvider = encoderPathProvider
+    }
 
     static func availability(for format: ExportFormat) -> (available: Bool, reason: String?) {
+        availability(for: format, encoderPath: ExternalEncoderSettings.ffmpegPath)
+    }
+
+    private static func availability(for format: ExportFormat, encoderPath: String?) -> (available: Bool, reason: String?) {
         switch format {
         case .wav, .aiff:
             return (true, "Available (Native)")
         case .m4a, .mp3, .flac:
-            guard let ffmpegPath = ExternalEncoderSettings.ffmpegPath,
+            guard let ffmpegPath = encoderPath,
                   FileManager.default.isExecutableFile(atPath: ffmpegPath) else {
-                return (false, "The bundled encoder is unavailable. Choose a custom FFmpeg executable in Preferences.")
+                return (false, "The bundled encoder is unavailable. Reinstall LightAudio Editor and try again.")
             }
             guard let encoders = ExternalEncoderSettings.audioEncoderNames(path: ffmpegPath) else {
                 return (false, "Could not read supported audio encoders from \(ExternalEncoderSettings.sourceDescription(for: ffmpegPath)).")
@@ -323,10 +332,11 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
         if cancellationToken.isCancelled { throw exportCancellationError() }
         try settings.validate()
         try validateExportDestination(settings.outputURL, for: project)
-        let availability = Self.availability(for: settings.format)
+        let ffmpegPath = encoderPathProvider()
+        let availability = Self.availability(for: settings.format, encoderPath: ffmpegPath)
         guard availability.available,
-              let ffmpegPath = ExternalEncoderSettings.ffmpegPath else {
-            throw NSError(domain: "LightAudio", code: 30, userInfo: [NSLocalizedDescriptionKey: availability.reason ?? "The bundled encoder is unavailable. Choose a custom FFmpeg executable in Preferences."])
+              let ffmpegPath else {
+            throw NSError(domain: "LightAudio", code: 30, userInfo: [NSLocalizedDescriptionKey: availability.reason ?? "The bundled encoder is unavailable. Reinstall LightAudio Editor and try again."])
         }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-\(UUID().uuidString).wav")

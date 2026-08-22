@@ -1,24 +1,18 @@
 import AppKit
 
 final class PreferencesWindowController: NSWindowController {
-    private let pathField = NSTextField(string: ExternalEncoderSettings.configuredFFmpegPath ?? "")
     private let statusLabel = NSTextField(labelWithString: "")
-    private let encoderHelpLabel = NSTextField(wrappingLabelWithString: "Leave this blank to use the Universal FFmpeg helper included with LightAudio Editor.")
     private let autoCrossfadeCheckbox = NSButton(checkboxWithTitle: "Automatically create crossfades when clips overlap", target: nil, action: nil)
     private let cacheStatusLabel = NSTextField(labelWithString: "")
     private let clearCacheButton = NSButton(title: "Clear App Cache", target: nil, action: nil)
-    private let testButton = NSButton(title: "Test FFmpeg", target: nil, action: nil)
-    private let useBundledButton = NSButton(title: "Use Bundled", target: nil, action: nil)
     private let onClearApplicationCaches: (@escaping (Result<ApplicationCacheClearResult, Error>) -> Void) -> Void
-    private var encoderTestGeneration = 0
 
     init(onClearApplicationCaches: @escaping (@escaping (Result<ApplicationCacheClearResult, Error>) -> Void) -> Void) {
         self.onClearApplicationCaches = onClearApplicationCaches
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 370), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 220), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Preferences"
         super.init(window: window)
         setup()
-        testFFmpeg(nil)
     }
 
     required init?(coder: NSCoder) {
@@ -27,14 +21,6 @@ final class PreferencesWindowController: NSWindowController {
 
     private func setup() {
         guard let content = window?.contentView else { return }
-        let label = NSTextField(labelWithString: "Custom FFmpeg")
-        let browse = NSButton(title: "Browse...", target: self, action: #selector(browse))
-        testButton.target = self
-        testButton.action = #selector(testFFmpeg)
-        useBundledButton.target = self
-        useBundledButton.action = #selector(useBundledFFmpeg)
-        pathField.placeholderString = "Optional custom executable path"
-        encoderHelpLabel.textColor = .secondaryLabelColor
         autoCrossfadeCheckbox.state = EditorPreferences.automaticallyCreateCrossfades ? .on : .off
         autoCrossfadeCheckbox.target = self
         autoCrossfadeCheckbox.action = #selector(autoCrossfadeChanged)
@@ -42,85 +28,24 @@ final class PreferencesWindowController: NSWindowController {
         clearCacheButton.action = #selector(clearApplicationCache)
         cacheStatusLabel.textColor = .secondaryLabelColor
 
-        [label, pathField, browse, encoderHelpLabel, testButton, useBundledButton, statusLabel, autoCrossfadeCheckbox, clearCacheButton, cacheStatusLabel].forEach {
+        [autoCrossfadeCheckbox, statusLabel, clearCacheButton, cacheStatusLabel].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview($0)
         }
 
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-            label.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            pathField.centerYAnchor.constraint(equalTo: label.centerYAnchor),
-            pathField.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 16),
-            pathField.trailingAnchor.constraint(equalTo: browse.leadingAnchor, constant: -8),
-            browse.centerYAnchor.constraint(equalTo: label.centerYAnchor),
-            browse.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            encoderHelpLabel.topAnchor.constraint(equalTo: pathField.bottomAnchor, constant: 8),
-            encoderHelpLabel.leadingAnchor.constraint(equalTo: pathField.leadingAnchor),
-            encoderHelpLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            testButton.topAnchor.constraint(equalTo: encoderHelpLabel.bottomAnchor, constant: 14),
-            testButton.leadingAnchor.constraint(equalTo: pathField.leadingAnchor),
-            useBundledButton.centerYAnchor.constraint(equalTo: testButton.centerYAnchor),
-            useBundledButton.leadingAnchor.constraint(equalTo: testButton.trailingAnchor, constant: 8),
-            statusLabel.topAnchor.constraint(equalTo: testButton.bottomAnchor, constant: 14),
-            statusLabel.leadingAnchor.constraint(equalTo: pathField.leadingAnchor),
+            autoCrossfadeCheckbox.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
+            autoCrossfadeCheckbox.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
+            autoCrossfadeCheckbox.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -24),
+            statusLabel.topAnchor.constraint(equalTo: autoCrossfadeCheckbox.bottomAnchor, constant: 12),
+            statusLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
             statusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            autoCrossfadeCheckbox.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 22),
-            autoCrossfadeCheckbox.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            autoCrossfadeCheckbox.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -20),
-            clearCacheButton.topAnchor.constraint(equalTo: autoCrossfadeCheckbox.bottomAnchor, constant: 26),
-            clearCacheButton.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
+            clearCacheButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 30),
+            clearCacheButton.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
             cacheStatusLabel.centerYAnchor.constraint(equalTo: clearCacheButton.centerYAnchor),
             cacheStatusLabel.leadingAnchor.constraint(equalTo: clearCacheButton.trailingAnchor, constant: 12),
-            cacheStatusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20)
+            cacheStatusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24)
         ])
-    }
-
-    @objc private func browse() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.beginSheetModal(for: window!) { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            self?.pathField.stringValue = url.path
-            ExternalEncoderSettings.configuredFFmpegPath = url.path
-            self?.testFFmpeg(nil)
-        }
-    }
-
-    @objc private func testFFmpeg(_ sender: Any?) {
-        let customPath = pathField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        ExternalEncoderSettings.configuredFFmpegPath = customPath.isEmpty ? nil : customPath
-        let path = ExternalEncoderSettings.ffmpegPath
-        encoderTestGeneration &+= 1
-        let generation = encoderTestGeneration
-        testButton.isEnabled = false
-        statusLabel.stringValue = "Testing FFmpeg..."
-        statusLabel.textColor = .secondaryLabelColor
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let version = path.flatMap { ExternalEncoderSettings.ffmpegVersion(path: $0) }
-            let source = path.map { ExternalEncoderSettings.sourceDescription(for: $0) }
-            DispatchQueue.main.async {
-                guard let self, self.encoderTestGeneration == generation else { return }
-                self.testButton.isEnabled = true
-                if let version, let source {
-                    self.statusLabel.stringValue = "\(source): \(version)"
-                    self.statusLabel.textColor = .secondaryLabelColor
-                } else {
-                    self.statusLabel.stringValue = customPath.isEmpty
-                        ? "The bundled FFmpeg helper is unavailable."
-                        : "FFmpeg is not available at the custom path."
-                    self.statusLabel.textColor = .systemRed
-                }
-            }
-        }
-    }
-
-    @objc private func useBundledFFmpeg() {
-        pathField.stringValue = ""
-        ExternalEncoderSettings.configuredFFmpegPath = nil
-        testFFmpeg(nil)
     }
 
     @objc private func autoCrossfadeChanged() {

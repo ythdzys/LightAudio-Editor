@@ -12,6 +12,35 @@ enum TimelineContentSizing {
     }
 }
 
+enum TimelineScrollInvalidation {
+    static func newlyExposedRects(from oldBounds: NSRect, to newBounds: NSRect) -> [NSRect] {
+        let old = oldBounds.standardized
+        let new = newBounds.standardized
+        guard new.width > 0, new.height > 0 else { return [] }
+
+        let overlap = old.intersection(new)
+        guard !overlap.isNull, !overlap.isEmpty else { return [new] }
+
+        var rects: [NSRect] = []
+        if new.minX < overlap.minX {
+            rects.append(NSRect(x: new.minX, y: new.minY, width: overlap.minX - new.minX, height: new.height))
+        }
+        if overlap.maxX < new.maxX {
+            rects.append(NSRect(x: overlap.maxX, y: new.minY, width: new.maxX - overlap.maxX, height: new.height))
+        }
+
+        if overlap.width > 0 {
+            if new.minY < overlap.minY {
+                rects.append(NSRect(x: overlap.minX, y: new.minY, width: overlap.width, height: overlap.minY - new.minY))
+            }
+            if overlap.maxY < new.maxY {
+                rects.append(NSRect(x: overlap.minX, y: overlap.maxY, width: overlap.width, height: new.maxY - overlap.maxY))
+            }
+        }
+        return rects.filter { $0.width > 0 && $0.height > 0 }
+    }
+}
+
 enum WaveformRenderMetrics {
     static let maximumDrawnColumns = 6_000
     static let maximumReferenceSamples = 8_192
@@ -233,6 +262,7 @@ final class TimelineView: NSView {
     }
 
     override var isFlipped: Bool { true }
+    override var isOpaque: Bool { true }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -286,6 +316,10 @@ final class TimelineView: NSView {
     private func scrollBoundsDidChange(to newBounds: NSRect) {
         let oldBounds = lastObservedScrollBounds ?? newBounds
         lastObservedScrollBounds = newBounds
+
+        for rect in TimelineScrollInvalidation.newlyExposedRects(from: oldBounds, to: newBounds) {
+            setNeedsDisplay(rect.intersection(bounds))
+        }
 
         let oldHeader = NSRect(x: oldBounds.minX, y: oldBounds.minY, width: trackHeaderWidth + 1, height: oldBounds.height)
         let newHeader = NSRect(x: newBounds.minX, y: newBounds.minY, width: trackHeaderWidth + 1, height: newBounds.height)
@@ -351,7 +385,13 @@ final class TimelineView: NSView {
     }
 
     private var stickyHeaderX: CGFloat {
-        max(0, visibleRect.minX)
+        max(0, viewportBounds.minX)
+    }
+
+    private var viewportBounds: NSRect {
+        let viewport = observedScrollClipView?.bounds ?? visibleRect
+        let clipped = viewport.intersection(bounds)
+        return clipped.isNull || clipped.isEmpty ? bounds : clipped
     }
 
     private var stickyHeaderMaxX: CGFloat {
@@ -382,27 +422,32 @@ final class TimelineView: NSView {
     private func invalidatePlayhead(from oldTime: TimeInterval, to newTime: TimeInterval) {
         let oldX = x(for: oldTime)
         let newX = x(for: newTime)
+        let viewport = viewportBounds
         let rect = NSRect(
             x: min(oldX, newX) - 4,
-            y: visibleRect.minY,
+            y: viewport.minY,
             width: abs(newX - oldX) + 8,
-            height: max(1, visibleRect.height)
+            height: max(1, viewport.height)
         )
         setNeedsDisplay(rect)
     }
 
     private func invalidateVisibleTrackHeaders() {
+        let viewport = viewportBounds
         let rect = NSRect(
             x: stickyHeaderX,
-            y: visibleRect.minY,
+            y: viewport.minY,
             width: trackHeaderWidth + 2,
-            height: max(1, visibleRect.height)
+            height: max(1, viewport.height)
         )
         setNeedsDisplay(rect)
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let renderRect = dirtyRect.intersection(visibleRect)
+        // On Catalina, visibleRect can lag behind the dirty rectangle by one scroll
+        // event. The dirty rectangle is already in document coordinates and is the
+        // authoritative region AppKit needs redrawn.
+        let renderRect = dirtyRect.intersection(bounds)
         guard !renderRect.isNull, !renderRect.isEmpty else { return }
         NSGraphicsContext.current?.saveGraphicsState()
         NSBezierPath(rect: renderRect).addClip()
@@ -591,7 +636,7 @@ final class TimelineView: NSView {
 
         guard preview.allowed else { return }
         let assetDuration = project.asset(id: preview.assetID)?.metadata.duration ?? 4
-        let ghostWidth = min(max(36, CGFloat(assetDuration / secondsPerPoint)), max(48, visibleRect.width * 0.65))
+        let ghostWidth = min(max(36, CGFloat(assetDuration / secondsPerPoint)), max(48, viewportBounds.width * 0.65))
         let inset: CGFloat = laneHeight < 50 ? 6 : 10
         let ghostRect = NSRect(x: x(for: preview.time), y: y + inset, width: ghostWidth, height: max(18, laneHeight - inset * 2))
         guard ghostRect.intersects(renderRect) else { return }
@@ -712,7 +757,7 @@ final class TimelineView: NSView {
         ]
         let text = "Drag media here to start editing" as NSString
         let size = text.size(withAttributes: attrs)
-        let visible = visibleRect
+        let visible = viewportBounds
         let x = max(stickyHeaderMaxX + 24, visible.midX - size.width / 2)
         let y = max(rulerHeight + 40, visible.midY - size.height / 2)
         text.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
@@ -907,7 +952,8 @@ final class TimelineView: NSView {
 
     private func drawTrimPreviewLine(_ preview: TrimDragPreview, clipRect: NSRect, color: NSColor) {
         let previewX = x(for: preview.timelineTime)
-        guard previewX >= visibleRect.minX - 4, previewX <= visibleRect.maxX + 4 else { return }
+        let viewport = viewportBounds
+        guard previewX >= viewport.minX - 4, previewX <= viewport.maxX + 4 else { return }
         let line = NSBezierPath()
         line.move(to: NSPoint(x: previewX, y: clipRect.minY + 3))
         line.line(to: NSPoint(x: previewX, y: clipRect.maxY - 3))
@@ -934,7 +980,7 @@ final class TimelineView: NSView {
         let height = ceil(textSize.height + padding.height * 2)
         let previewX = x(for: preview.timelineTime)
         let proposedX = preview.edge == .left ? previewX + 10 : previewX - width - 10
-        let visible = visibleRect
+        let visible = viewportBounds
         let tooltipX = min(max(proposedX, visible.minX + 6), visible.maxX - width - 6)
         let tooltipY = min(max(clipRect.minY + 6, visible.minY + 6), visible.maxY - height - 6)
         let rect = NSRect(x: tooltipX, y: tooltipY, width: width, height: height)
@@ -1069,7 +1115,6 @@ final class TimelineView: NSView {
 
         let drawRect = rect
             .intersection(renderRect.insetBy(dx: -2, dy: 0))
-            .intersection(visibleRect.insetBy(dx: -2, dy: 0))
         guard drawRect.width > 1, drawRect.height > 1 else { return }
 
         let fullSourceStart = max(0, min(clip.sourceStart, waveform.duration))
@@ -1168,7 +1213,6 @@ final class TimelineView: NSView {
     private func drawPlaceholderWaveform(in rect: NSRect, style: PlaceholderWaveformStyle, renderRect: NSRect? = nil) {
         let drawRect = rect
             .intersection(renderRect ?? rect)
-            .intersection(visibleRect.insetBy(dx: -2, dy: 0))
         guard !drawRect.isNull, drawRect.width > 1, drawRect.height > 1 else { return }
         let path = NSBezierPath()
         let mid = drawRect.midY
@@ -1245,7 +1289,7 @@ final class TimelineView: NSView {
             pinchZoomState = PinchZoomState(
                 initialZoom: project.viewState.zoom,
                 anchorTime: time(forX: location.x),
-                anchorViewportX: location.x - visibleRect.minX
+                anchorViewportX: location.x - viewportBounds.minX
             )
         case .changed:
             guard let state = pinchZoomState else { return }

@@ -2,41 +2,14 @@ import Foundation
 import Darwin
 
 enum ExternalEncoderSettings {
-    private static let ffmpegPathKey = "LightAudioFFmpegPath"
     private static let processTimeout: TimeInterval = 3
     private static let encoderLock = NSLock()
     private static var cachedEncoderNames: [String: Set<String>] = [:]
+    static let requiredAudioEncoderNames: Set<String> = ["aac", "libmp3lame", "flac"]
 
-    static var ffmpegPath: String? {
-        get {
-            preferredFFmpegPath(
-                configuredPath: configuredFFmpegPath,
-                bundledPath: bundledFFmpegPath,
-                systemCandidates: systemFFmpegCandidates
-            )
-        }
-        set {
-            configuredFFmpegPath = newValue
-        }
-    }
-
-    /// An optional user override. A blank value deliberately falls back to the
-    /// signed helper inside the app bundle, then to a compatible system install.
-    static var configuredFFmpegPath: String? {
-        get {
-            normalizedPath(UserDefaults.standard.string(forKey: ffmpegPathKey))
-        }
-        set {
-            if let path = normalizedPath(newValue) {
-                UserDefaults.standard.set(path, forKey: ffmpegPathKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: ffmpegPathKey)
-            }
-            encoderLock.lock()
-            cachedEncoderNames.removeAll()
-            encoderLock.unlock()
-        }
-    }
+    /// Production export always uses the helper sealed inside this app bundle.
+    /// This keeps compressed export deterministic and requires no user setup.
+    static var ffmpegPath: String? { bundledFFmpegPath }
 
     static var bundledFFmpegPath: String? {
         let bundles = [Bundle.main, Bundle(for: BundleLocator.self)]
@@ -49,39 +22,16 @@ enum ExternalEncoderSettings {
         return nil
     }
 
-    static func detectedFFmpegPath() -> String? {
-        preferredFFmpegPath(
-            configuredPath: nil,
-            bundledPath: bundledFFmpegPath,
-            systemCandidates: systemFFmpegCandidates
-        )
-    }
-
     static func sourceDescription(for path: String) -> String {
-        if pathsReferToSameFile(path, bundledFFmpegPath) {
-            return "Bundled FFmpeg"
-        }
-        if pathsReferToSameFile(path, configuredFFmpegPath) {
-            return "Custom FFmpeg"
-        }
-        return "System FFmpeg"
+        pathsReferToSameFile(path, bundledFFmpegPath) ? "Bundled FFmpeg" : "FFmpeg"
     }
 
-    static func preferredFFmpegPath(
-        configuredPath: String?,
-        bundledPath: String?,
-        systemCandidates: [String],
-        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
-    ) -> String? {
-        if let configuredPath = normalizedPath(configuredPath) {
-            // Keep an invalid explicit override visible so Preferences can report it,
-            // instead of silently exporting with a different binary.
-            return configuredPath
+    static func bundledEncoderSupportsRequiredFormats() -> Bool {
+        guard let path = bundledFFmpegPath,
+              let encoders = audioEncoderNames(path: path) else {
+            return false
         }
-        if let bundledPath = normalizedPath(bundledPath), isExecutable(bundledPath) {
-            return bundledPath
-        }
-        return systemCandidates.first(where: isExecutable)
+        return encoders.isSuperset(of: requiredAudioEncoderNames)
     }
 
     static func ffmpegVersion(path: String) -> String? {
@@ -181,22 +131,8 @@ enum ExternalEncoderSettings {
         return "\(path)|\(size)|\(date)"
     }
 
-    private static let systemFFmpegCandidates = [
-        "/opt/homebrew/bin/ffmpeg",
-        "/usr/local/bin/ffmpeg",
-        "/usr/bin/ffmpeg"
-    ]
-
-    private static func normalizedPath(_ path: String?) -> String? {
-        guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !path.isEmpty else {
-            return nil
-        }
-        return (path as NSString).expandingTildeInPath
-    }
-
     private static func pathsReferToSameFile(_ lhs: String?, _ rhs: String?) -> Bool {
-        guard let lhs = normalizedPath(lhs), let rhs = normalizedPath(rhs) else { return false }
+        guard let lhs, !lhs.isEmpty, let rhs, !rhs.isEmpty else { return false }
         return URL(fileURLWithPath: lhs).resolvingSymlinksInPath().standardizedFileURL
             == URL(fileURLWithPath: rhs).resolvingSymlinksInPath().standardizedFileURL
     }

@@ -69,6 +69,15 @@ final class P2RegressionTests: XCTestCase {
         )
     }
 
+    func testHorizontalTimelineScrollInvalidatesTheNewlyExposedRightEdge() {
+        let exposed = TimelineScrollInvalidation.newlyExposedRects(
+            from: NSRect(x: 0, y: 0, width: 800, height: 500),
+            to: NSRect(x: 240, y: 0, width: 800, height: 500)
+        )
+
+        XCTAssertEqual(exposed, [NSRect(x: 800, y: 0, width: 240, height: 500)])
+    }
+
     func testWaveformRenderingWorkIsBoundedByTheDirtyPixelWidth() {
         XCTAssertEqual(WaveformRenderMetrics.barCount(peakCount: 360_000, dirtyWidth: 8.2), 9)
         XCTAssertEqual(
@@ -710,44 +719,14 @@ final class P2RegressionTests: XCTestCase {
         XCTAssertEqual(encoders, Set(["aac", "flac"]))
     }
 
-    func testEncoderResolutionPrefersCustomThenBundledThenSystem() {
-        let executablePaths = Set(["/bundled/ffmpeg", "/system/ffmpeg"])
-        let isExecutable: (String) -> Bool = { executablePaths.contains($0) }
-
+    func testProductionEncoderPathUsesTheBundledExecutable() throws {
         XCTAssertEqual(
-            ExternalEncoderSettings.preferredFFmpegPath(
-                configuredPath: "/custom/ffmpeg",
-                bundledPath: "/bundled/ffmpeg",
-                systemCandidates: ["/system/ffmpeg"],
-                isExecutable: isExecutable
-            ),
-            "/custom/ffmpeg"
-        )
-        XCTAssertEqual(
-            ExternalEncoderSettings.preferredFFmpegPath(
-                configuredPath: nil,
-                bundledPath: "/bundled/ffmpeg",
-                systemCandidates: ["/system/ffmpeg"],
-                isExecutable: isExecutable
-            ),
-            "/bundled/ffmpeg"
-        )
-        XCTAssertEqual(
-            ExternalEncoderSettings.preferredFFmpegPath(
-                configuredPath: nil,
-                bundledPath: "/missing/ffmpeg",
-                systemCandidates: ["/system/ffmpeg"],
-                isExecutable: isExecutable
-            ),
-            "/system/ffmpeg"
+            ExternalEncoderSettings.ffmpegPath,
+            try XCTUnwrap(ExternalEncoderSettings.bundledFFmpegPath)
         )
     }
 
     func testBundledEncoderSupportsAndExportsCompressedFormats() throws {
-        let previousCustomPath = ExternalEncoderSettings.configuredFFmpegPath
-        ExternalEncoderSettings.configuredFFmpegPath = nil
-        defer { ExternalEncoderSettings.configuredFFmpegPath = previousCustomPath }
-
         let encoderPath = try XCTUnwrap(ExternalEncoderSettings.bundledFFmpegPath)
         XCTAssertEqual(ExternalEncoderSettings.ffmpegPath, encoderPath)
         XCTAssertEqual(ExternalEncoderSettings.sourceDescription(for: encoderPath), "Bundled FFmpeg")
@@ -811,9 +790,7 @@ final class P2RegressionTests: XCTestCase {
         let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-Cancelled-\(UUID().uuidString).m4a")
         let scriptURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-FFmpeg-Cancel-\(UUID().uuidString)")
         let startedURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-FFmpeg-Cancel-Started-\(UUID().uuidString)")
-        let previousFFmpegPath = ExternalEncoderSettings.configuredFFmpegPath
         defer {
-            ExternalEncoderSettings.configuredFFmpegPath = previousFFmpegPath
             try? FileManager.default.removeItem(at: sourceURL)
             try? FileManager.default.removeItem(at: outputURL)
             try? FileManager.default.removeItem(at: scriptURL)
@@ -832,7 +809,6 @@ final class P2RegressionTests: XCTestCase {
         """
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
-        ExternalEncoderSettings.configuredFFmpegPath = scriptURL.path
 
         let asset = MediaAsset(
             displayName: "Tone",
@@ -867,7 +843,7 @@ final class P2RegressionTests: XCTestCase {
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                _ = try ExternalEncoderExportBackend().export(
+                _ = try ExternalEncoderExportBackend(encoderPathProvider: { scriptURL.path }).export(
                     project: project,
                     settings: settings,
                     cancellationToken: cancellationToken,

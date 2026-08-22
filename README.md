@@ -37,7 +37,7 @@ The Universal app supports **Intel Macs on macOS Catalina 10.15 and later** and 
 
 Actual decoding support depends on the codecs available to AVFoundation on the current macOS version. MP4, MOV, and M4V provide the most reliable video-origin import path. Video is never displayed or edited; only its audio stream is used.
 
-M4A, MP3, and FLAC work without a separate install. LightAudio Editor includes a narrowly configured LGPL FFmpeg/LAME command-line helper for Intel and Apple silicon Macs and selects it automatically. **LightAudio Editor > Preferences** can still select and test a custom FFmpeg executable as an optional override; clearing that field returns to the bundled helper.
+M4A, MP3, and FLAC work without a separate install or preference setting. LightAudio Editor includes a narrowly configured LGPL FFmpeg/LAME command-line helper for Intel and Apple silicon Macs, validates it in the background at launch, and uses it automatically for compressed export.
 
 MP3 export accepts LAME-compatible sample rates up to 48 kHz. If the project default or a previously selected rate is not compatible with MP3, the export panel selects 48 kHz automatically and validates the setting before rendering begins. WAV, AIFF, M4A, and FLAC retain the higher sample-rate options.
 
@@ -56,6 +56,7 @@ The timeline supports:
 - Clip volume automation keyframes with linear interpolation
 - In/Out points, loop playback, markers, track collapse/reorder, variable track height, and zoom-to-fit
 - Smooth pointer-anchored trackpad pinch zoom over a wide timeline range
+- Catalina-safe horizontal scrolling that redraws newly exposed timeline content without waiting for a window resize
 
 Locked tracks remain audible but reject editing, pasting, trimming, deletion, and media drops. Mute and solo state is applied consistently during playback, metering, and export.
 
@@ -179,7 +180,7 @@ xcodebuild \
   test
 ```
 
-Current verification: **58 tests passing** on both Apple silicon and Intel build paths, including real bundled M4A, MP3, and FLAC exports.
+Current verification: **59 tests passing** on both Apple silicon and Intel build paths, including timeline scroll invalidation and real bundled M4A, MP3, and FLAC exports.
 
 ## Current Limitations
 
@@ -196,7 +197,7 @@ Current verification: **58 tests passing** on both Apple silicon and Intel build
 - AppKit
 - AVFoundation / AVFAudio / AVAudioEngine
 - CryptoKit for stable cache and metadata identities
-- Bundled Universal FFmpeg/LAME helper through a replaceable external-process export backend
+- Bundled Universal FFmpeg/LAME helper through an internal process-based export backend
 
 ## Bundled Encoder and Licensing
 
