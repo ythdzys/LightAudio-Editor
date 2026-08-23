@@ -21,6 +21,14 @@ For substantial behavior or architecture changes, open an issue first. LightAudi
 
 Keep pull requests focused. Avoid unrelated formatting, generated build products, personal Xcode settings, or destructive project-format changes.
 
+## Contribution Terms
+
+The first-party macOS project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE), with scope and exclusions described in [NOTICE](NOTICE). This is a source-available noncommercial license, not an OSI-approved open-source license.
+
+Issue reports and feature discussions are welcome. Do not submit a code contribution unless the maintainer has agreed to it in advance. A separate contributor agreement may be required before a pull request can be merged so that contributions can be maintained across the public macOS project and separately licensed products. Unsolicited code submissions may be closed without being merged.
+
+By submitting an accepted contribution, you represent that you have the right to provide it and agree to the contribution terms confirmed with the maintainer. Submitting a pull request by itself does not change ownership or grant rights beyond the repository license.
+
 ## Build and Test
 
 ```bash
@@ -50,5 +58,3 @@ Please add focused regression coverage for behavioral fixes. Changes affecting i
 - Keep waveform, proxy, recovery, and build output outside project documents.
 - Keep media processing off the main thread.
 - Do not commit credentials, signing identities, notarization secrets, or downloaded upstream source archives.
-
-By submitting a contribution, you confirm that you have the right to provide it. The project does not currently declare an open-source license; discuss licensing expectations with the maintainer before making a substantial contribution.

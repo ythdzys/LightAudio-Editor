@@ -1,0 +1,33 @@
+Required Notice: Copyright 2026 Yishun Zhao.
+
+LightAudio Editor License Scope
+================================
+
+The PolyForm Noncommercial License 1.0.0 in LICENSE applies to the
+first-party macOS application source code, Xcode project, tests, scripts,
+documentation, and other original materials in this repository, except for
+the excluded materials described below.
+
+The license permits noncommercial use only. Commercial use requires a
+separate written license from the copyright holder.
+
+Excluded Materials
+------------------
+
+1. FFmpeg, LAME, their executable code, license texts, build metadata, and
+   corresponding source materials are governed by their own licenses. See
+   LightAudio Editor/Resources/BundledEncoder and ThirdParty/FFmpeg.
+
+2. The LightAudio Editor name, logo, and app icon are not licensed under the
+   PolyForm Noncommercial License. They may be copied only as necessary to
+   build and test an unmodified copy of the macOS application for a permitted
+   noncommercial purpose. Modified distributions must use a different name,
+   logo, icon, and bundle identifier and must not imply endorsement by the
+   LightAudio Editor project or its copyright holder.
+
+3. Any future iOS-specific source code, Xcode project, application, or assets
+   are excluded unless an explicit file-level notice says otherwise. No rights
+   to an unpublished or separately distributed iOS edition are granted by this
+   repository's license.
+
+All rights not expressly granted are reserved.

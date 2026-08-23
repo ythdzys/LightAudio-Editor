@@ -44,6 +44,8 @@
 		BF0000010000000000000024 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001024 /* Assets.xcassets */; };
 		BF0000010000000000000026 /* P2RegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001026 /* P2RegressionTests.swift */; };
 		BF0000010000000000000027 /* BundledEncoder in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001027 /* BundledEncoder */; };
+		BF0000010000000000000028 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001028 /* LICENSE */; };
+		BF0000010000000000000029 /* NOTICE in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001029 /* NOTICE */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -87,6 +89,8 @@
 		BF0000010000000000001024 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BF0000010000000000001026 /* P2RegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = P2RegressionTests.swift; sourceTree = "<group>"; };
 		BF0000010000000000001027 /* BundledEncoder */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/BundledEncoder; sourceTree = "<group>"; };
+		BF0000010000000000001028 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = SOURCE_ROOT; };
+		BF0000010000000000001029 /* NOTICE */ = {isa = PBXFileReference; lastKnownFileType = text; path = NOTICE; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -108,6 +112,7 @@
 		BF0000010000000000004000 = {
 			isa = PBXGroup;
 			children = (
+				BF0000010000000000004003 /* Licensing */,
 				BF0000010000000000005000 /* LightAudio Editor */,
 				BF0000010000000000004002 /* LightAudio EditorTests */,
 				BF0000010000000000004001 /* Products */,
@@ -121,6 +126,15 @@
 				BF0000010000000000001026 /* P2RegressionTests.swift */,
 			);
 			path = "LightAudio EditorTests";
+			sourceTree = "<group>";
+		};
+		BF0000010000000000004003 /* Licensing */ = {
+			isa = PBXGroup;
+			children = (
+				BF0000010000000000001028 /* LICENSE */,
+				BF0000010000000000001029 /* NOTICE */,
+			);
+			name = Licensing;
 			sourceTree = "<group>";
 		};
 		BF0000010000000000005000 /* LightAudio Editor */ = {
@@ -230,6 +244,8 @@
 			files = (
 				BF0000010000000000000024 /* Assets.xcassets in Resources */,
 				BF0000010000000000000027 /* BundledEncoder in Resources */,
+				BF0000010000000000000028 /* LICENSE in Resources */,
+				BF0000010000000000000029 /* NOTICE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -44,7 +44,7 @@ Run from the repository root. Use the exact identity shown by `security find-ide
 
 ```bash
 APPLE_TEAM_ID="YOUR_TEAM_ID" \
-DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (YOUR_TEAM_ID)" \
+DEVELOPER_ID_APPLICATION="Developer ID Application: Yishun Zhao (YOUR_TEAM_ID)" \
 ./Scripts/build-beta.sh
 ```
 

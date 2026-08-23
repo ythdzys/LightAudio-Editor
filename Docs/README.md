@@ -5,3 +5,5 @@
 - [App icon source](Brand/LightAudio-Editor-App-Icon.png)
 
 User-facing installation and feature documentation lives in the repository [README](../README.md). FFmpeg/LAME rebuild and licensing details live under [ThirdParty/FFmpeg](../ThirdParty/FFmpeg/README.md).
+
+The first-party macOS project is licensed under the [PolyForm Noncommercial License 1.0.0](../LICENSE). See the repository [NOTICE](../NOTICE) for scope and exclusions.

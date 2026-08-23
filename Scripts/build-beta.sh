@@ -94,6 +94,13 @@ if [[ ! -x "$DIST_ENCODER" ]]; then
     exit 1
 fi
 
+DIST_LICENSE="$DIST_APP/Contents/Resources/LICENSE"
+DIST_NOTICE="$DIST_APP/Contents/Resources/NOTICE"
+if ! cmp -s "$ROOT_DIR/LICENSE" "$DIST_LICENSE" || ! cmp -s "$ROOT_DIR/NOTICE" "$DIST_NOTICE"; then
+    print -u2 "The archive did not contain the current application license and notice."
+    exit 1
+fi
+
 if [[ -n "$IDENTITY" ]]; then
     codesign --force --sign "$IDENTITY" --options runtime --timestamp "$DIST_ENCODER"
     codesign --force --sign "$IDENTITY" --options runtime --timestamp "$DIST_APP"

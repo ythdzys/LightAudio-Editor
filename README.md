@@ -22,6 +22,7 @@
   <img alt="Universal Intel and Apple silicon" src="https://img.shields.io/badge/Mac-Intel%20%2B%20Apple%20silicon-555555">
   <img alt="Swift 5" src="https://img.shields.io/badge/Swift-5-F05138?logo=swift&logoColor=white">
   <img alt="Beta release" src="https://img.shields.io/badge/status-public%20beta-e6a700">
+  <a href="LICENSE"><img alt="PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-2f6f55"></a>
 </p>
 
 LightAudio Editor provides a timeline-oriented workflow for importing, arranging, trimming, mixing, and exporting audio. Video files are treated as audio-only sources: the app creates a reusable audio proxy and never presents video editing controls. All edits are non-destructive and original media is left untouched.
@@ -193,10 +194,16 @@ See [Contributing](CONTRIBUTING.md) before opening a pull request. Bug reports s
 - The bundled encoder is limited to LightAudio Editor's AAC/M4A, MP3, and FLAC export workflow
 - Public beta packages are currently ad-hoc signed and unnotarized
 
-## Bundled Encoder and Licensing
+## License
+
+Copyright 2026 Yishun Zhao. The first-party LightAudio Editor macOS source is available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, study, modify, and redistribute it for permitted noncommercial purposes. Commercial use requires a separate written license from the copyright holder.
+
+This is a **source-available noncommercial license**, not an OSI-approved open-source license. See [NOTICE](NOTICE) for the exact scope, branding restrictions, third-party exclusions, and explicit exclusion of any future iOS edition.
+
+The LightAudio Editor name, logo, icon, and bundle identifier are not generally licensed for modified distributions. This keeps unofficial builds distinguishable from releases published by the project.
+
+## Bundled Encoder Licensing
 
 LightAudio Editor includes FFmpeg 9.0.1 and LAME 4.0 as a separate, narrowly configured Universal command-line helper. It is not linked into the Swift executable. FFmpeg's GPL and nonfree configure options are disabled.
 
-License notices and exact build metadata ship under `LightAudio Editor/Resources/BundledEncoder`. Reproducible build details are documented in [ThirdParty/FFmpeg/README.md](ThirdParty/FFmpeg/README.md), and every binary release includes a corresponding-source archive.
-
-The LightAudio Editor application source does not currently declare an open-source license. Publication of the source does not grant rights beyond those provided by applicable law and GitHub's Terms of Service. Third-party components remain governed by their respective license files.
+License notices and exact build metadata ship under `LightAudio Editor/Resources/BundledEncoder`. Reproducible build details are documented in [ThirdParty/FFmpeg/README.md](ThirdParty/FFmpeg/README.md), and every binary release includes a corresponding-source archive. These third-party components remain governed by their own licenses and are not relicensed under PolyForm.
