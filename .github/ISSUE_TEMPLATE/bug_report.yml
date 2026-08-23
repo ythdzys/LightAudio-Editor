@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a reproducible problem with importing, editing, playback, projects, or export.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping test LightAudio Editor. Please avoid attaching confidential or copyrighted media.
+  - type: input
+    id: version
+    attributes:
+      label: LightAudio Editor version
+      description: Find the version and build number under LightAudio Editor > About.
+      placeholder: 0.1.1 (2)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: macOS and Mac
+      placeholder: macOS 10.15.7, Intel MacBook Pro
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include source format, project state, and exact commands or interactions.
+      placeholder: |
+        1. Import ...
+        2. Drag ...
+        3. Export ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include exact error messages and screenshots when useful.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected workflow
+      options:
+        - Import or media management
+        - Timeline editing
+        - Playback or mixing
+        - Export
+        - Project save, open, or recovery
+        - User interface
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked existing issues for the same problem.
+          required: true
+        - label: I can reproduce this with the latest available beta.
+          required: true

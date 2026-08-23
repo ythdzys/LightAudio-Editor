@@ -1,4 +1,4 @@
-# LightAudio Editor Beta Release
+# LightAudio Editor Beta Release Guide
 
 LightAudio Editor Beta 2 uses bundle identifier `com.ythdzys.LightAudioEditor`, marketing version `0.1.1`, and build number `2`.
 

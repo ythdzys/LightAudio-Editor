@@ -9,71 +9,107 @@
   Built with Swift, AppKit, AVFoundation, and AVFAudio.
 </p>
 
-LightAudio Editor provides a professional timeline-oriented workflow for arranging, trimming, mixing, and exporting audio. Video files can be imported as audio-only sources, while original media remains untouched throughout the editing process.
+<p align="center">
+  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.2"><strong>Download Beta 2</strong></a>
+  &nbsp;|&nbsp;
+  <a href="https://github.com/ythdzys/LightAudio-Editor/issues/new/choose">Report an issue</a>
+  &nbsp;|&nbsp;
+  <a href="Docs/Beta-Release.md">Release guide</a>
+</p>
 
-The Universal app supports **Intel Macs on macOS Catalina 10.15 and later** and **Apple silicon Macs on macOS Big Sur 11.0 and later**. Apple silicon starts at Big Sur; no Apple silicon Mac can run Catalina. LightAudio Editor uses the readable, versioned JSON-based `.liau` project format, and `.liau` files can be opened from Finder or from the app.
+<p align="center">
+  <img alt="macOS 10.15 or later" src="https://img.shields.io/badge/macOS-10.15%2B-black?logo=apple">
+  <img alt="Universal Intel and Apple silicon" src="https://img.shields.io/badge/Mac-Intel%20%2B%20Apple%20silicon-555555">
+  <img alt="Swift 5" src="https://img.shields.io/badge/Swift-5-F05138?logo=swift&logoColor=white">
+  <img alt="Beta release" src="https://img.shields.io/badge/status-public%20beta-e6a700">
+</p>
 
-## Highlights
+LightAudio Editor provides a timeline-oriented workflow for importing, arranging, trimming, mixing, and exporting audio. Video files are treated as audio-only sources: the app creates a reusable audio proxy and never presents video editing controls. All edits are non-destructive and original media is left untouched.
 
-- Native AppKit interface with a media bin, fixed track headers, scrollable timeline, inspector, toolbar, and status area
-- Multiple audio tracks with reorder, collapse, height adjustment, mute, solo, lock, volume, pan, and level meters
-- Real waveform analysis and persistent caching for audio and video-origin proxy media
-- Drag-and-drop import from Finder and direct placement from the media bin onto existing or automatically created tracks
-- Non-destructive clip move, trim, split, duplicate, ripple delete, fades, crossfades, gain, pan, naming, and color labels
-- Multi-selection, marquee selection, grouped movement, clipboard editing, snapping, markers, and undo/redo
-- Clip volume automation envelopes with editable keyframes applied during playback and export
-- Smooth playback with seeking, audible fades, metering, clipping feedback, loop ranges, and follow-playhead mode
-- Full-project or In/Out range export to WAV, AIFF, M4A, MP3, and FLAC
-- Crash recovery, missing-media relinking, portable media collection, and project cleanup tools
+> [!IMPORTANT]
+> LightAudio Editor is beta software. Keep backups of important `.liau` projects and source media. The current public build is ad-hoc signed and not notarized, so macOS requires one-time approval before first launch.
 
-## Import and Export
+## Download and Install
 
-| Direction | Formats | Backend |
+1. Open the [Beta 2 release](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.2).
+2. Download `LightAudio-Editor-0.1.1-beta-2-ADHOC-UNNOTARIZED.zip`.
+3. Extract the ZIP and move **LightAudio Editor.app** to `/Applications`.
+4. Try to open the app once. If macOS blocks it, approve it under:
+   - macOS Ventura and later: **System Settings > Privacy & Security > Open Anyway**
+   - macOS Catalina through Monterey: **System Preferences > Security & Privacy > General > Open Anyway**
+
+Do not disable Gatekeeper globally. Managed Macs may prevent ad-hoc applications from being approved.
+
+The release also contains a larger `Bundled-Encoder-Source.zip`. That archive is corresponding source code provided for FFmpeg/LAME license compliance; users do **not** need it. The smaller app ZIP already contains the Universal encoder helper required for M4A, MP3, and FLAC export.
+
+## Compatibility
+
+| Mac | Minimum system | Architecture |
 | --- | --- | --- |
-| Audio import | MP3, WAV, M4A, AAC, FLAC, AIFF/AIF, CAF | AVFoundation / AVAudioFile |
-| Video import | MP4, MOV, M4V, MKV, AVI | Audio-only proxy through AVFoundation |
-| Native export | WAV, AIFF | Built-in renderer |
-| Compressed/lossless export | M4A/AAC, MP3, FLAC | Bundled Universal FFmpeg helper |
+| Intel Mac | macOS Catalina 10.15 | `x86_64` |
+| Apple silicon Mac | macOS Big Sur 11.0 | `arm64` |
 
-Actual decoding support depends on the codecs available to AVFoundation on the current macOS version. MP4, MOV, and M4V provide the most reliable video-origin import path. Video is never displayed or edited; only its audio stream is used.
+Both architectures ship in one Universal app. Apple silicon begins with macOS Big Sur; there are no Apple silicon Macs that run Catalina.
 
-M4A, MP3, and FLAC work without a separate install or preference setting. LightAudio Editor includes a narrowly configured LGPL FFmpeg/LAME command-line helper for Intel and Apple silicon Macs, validates it in the background at launch, and uses it automatically for compressed export.
+## Features
 
-MP3 export accepts LAME-compatible sample rates up to 48 kHz. If the project default or a previously selected rate is not compatible with MP3, the export panel selects 48 kHz automatically and validates the setting before rendering begins. WAV, AIFF, M4A, and FLAC retain the higher sample-rate options.
+### Import and Media
 
-## Timeline Editing
+- Import MP3, WAV, M4A, AAC, FLAC, AIFF/AIF, and CAF audio
+- Import MP4, MOV, M4V, MKV, and AVI as audio-only media when AVFoundation can decode the source
+- Finder drag and drop, folder import, duplicate detection, search, filtering, sorting, renaming, and media information
+- Asynchronous high-density waveform analysis with persistent versioned caches
+- Reusable audio proxies for video-origin media
+- Missing-media detection, individual relinking, and folder-based relinking
 
-The timeline supports:
+### Timeline and Editing
 
-- Clip placement across multiple tracks, including automatic track creation when media is dropped below the last track
-- Move, source trim, split, duplicate, Option-drag duplicate, delete, ripple delete, and arrow-key nudge
-- Command-click and Shift-click multi-selection, plus drag marquee selection
-- Copy, cut, and paste at the playhead while preserving relative track and timing relationships
-- Playhead, clip-edge, marker, and grid snapping with a visible snap guide
-- Linear, equal-power, ease-in, and ease-out fade curves
-- Explicit linear or equal-power crossfades between overlapping clips
-- Clip and track gain/pan, master volume, per-track meters, master metering, and clipping indication
-- Clip volume automation keyframes with linear interpolation
-- In/Out points, loop playback, markers, track collapse/reorder, variable track height, and zoom-to-fit
-- Smooth pointer-anchored trackpad pinch zoom over a wide timeline range
-- Catalina-safe horizontal scrolling that redraws newly exposed timeline content without waiting for a window resize
+- Multiple reorderable and collapsible tracks with adjustable heights
+- Clip move, trim, split, duplicate, ripple delete, nudge, rename, and color labels
+- Multi-selection, marquee selection, grouped editing, clipboard operations, and Option-drag duplication
+- Automatic track creation when media is dropped below existing tracks
+- Snapping to grid, playhead, markers, and clip edges
+- In/Out points, markers, loop playback, follow-playhead, zoom to fit, and smooth trackpad zoom
+- Linear, equal-power, ease-in, and ease-out fades plus explicit crossfades
+- Clip volume automation envelopes with editable keyframes
+- Undo/redo, dirty-state indicators, save prompts, crash recovery, and context menus
 
-Locked tracks remain audible but reject editing, pasting, trimming, deletion, and media drops. Mute and solo state is applied consistently during playback, metering, and export.
+### Playback and Mixing
 
-## Projects and Media Safety
+- Multitrack playback from the current playhead with smooth seeking
+- Clip gain, pan, fades, automation, track volume/pan, mute, solo, and master gain
+- Per-track and master meters with clipping feedback
+- Missing or failed media is never silently ignored: editing, playback, and export remain blocked until it is resolved
 
-`.liau` files are readable JSON documents containing timeline structure, media references, mix settings, markers, view state, and automation. They do not embed source audio, waveform arrays, or video proxies.
+### Export
 
-- Original media is never modified by editing, normalization, proxy generation, or export.
+| Format | Backend |
+| --- | --- |
+| WAV, AIFF | Native offline renderer |
+| M4A/AAC, MP3, FLAC | Bundled Universal FFmpeg/LAME helper |
+
+Export supports the entire project or the current In/Out range, mono or stereo output, selectable sample rates, compressed bitrates, progress, cancellation, and clipping detection. MP3 uses LAME-compatible sample rates up to 48 kHz. Exported audio includes trims, fades, crossfades, automation, clip/track mix controls, mute/solo state, and master gain.
+
+## Quick Start
+
+1. Choose **File > Import Media** or drag files into the media bin.
+2. Drag media onto the timeline. Drop below the last lane to create another track automatically.
+3. Move or trim clips, then adjust clip and track controls in the inspector and track headers.
+4. Press `Space` to play or pause.
+5. Choose **File > Export** to render WAV, AIFF, M4A, MP3, or FLAC.
+6. Save the editable project as a readable `.liau` file.
+
+## Projects, Recovery, and Caches
+
+`.liau` projects are readable JSON documents containing timeline structure, media references, mix settings, markers, view state, and automation. They do not embed source media, waveform arrays, or proxy audio.
+
 - Relative media paths are saved when possible.
-- Missing media remains represented in the project and can be relinked individually or by locating a folder.
-- Editing, playback, and export are intentionally blocked until all missing media has been relinked.
-- **File > Collect Project Media** creates a portable copy containing a `.liau` project and a `Media/` folder.
+- **File > Collect Project Media** creates a portable project copy with a `Media/` folder.
+- Recovery is offered only when a saved project had unsaved work and the previous session ended unexpectedly.
+- Original source media is never modified by editing, normalization, proxy generation, or export.
 - Export cannot overwrite imported source media or generated proxies.
 
-## Recovery and Caches
-
-App-generated data is stored outside both the `.app` bundle and `.liau` project files:
+Generated caches are stored under:
 
 ```text
 ~/Library/Application Support/LightAudio Editor/
@@ -82,30 +118,37 @@ App-generated data is stored outside both the `.app` bundle and `.liau` project 
 `-- Waveforms/
 ```
 
-Waveform and proxy caches are validated against source identity and regenerated when stale. Recovery snapshots are created only for dirty projects that have a real saved project path. After an unexpected shutdown, a newer unconsumed snapshot can be restored or declined.
+**LightAudio Editor > Preferences > Clear App Cache** removes generated waveforms, proxy audio, and recovery snapshots. It does not remove `.liau` projects or original media.
 
-**LightAudio Editor > Preferences > Clear App Cache** removes waveform caches, proxy audio, and recovery snapshots. It never removes `.liau` projects or original media, and cache clearing is blocked while an export is active.
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Space` | Play or pause |
+| `Command-S` / `Command-O` | Save / open project |
+| `Command-I` / `Command-E` | Import / export |
+| `Command-Z` / `Shift-Command-Z` | Undo / redo |
+| `Command-C` / `Command-X` / `Command-V` | Copy / cut / paste clips |
+| `Command-D` | Duplicate selected clips |
+| `Delete` | Delete selected clips or automation keyframe |
+| `S` or `Command-B` | Toggle razor tool |
+| `I` / `O` / `Option-X` | Set In / set Out / clear range |
+| `L` / `M` / `N` | Toggle loop / add marker / toggle snapping |
+| `Command-=` / `Command--` | Zoom in / out |
+| `Option-Command-=` / `Option-Command--` | Increase / decrease track height |
+| `Option-Left Arrow` / `Option-Right Arrow` | Previous / next clip edge |
+| `Home` / `End` | Jump to project start / end |
 
 ## Build from Source
 
 Requirements:
 
-- Intel Mac: macOS 10.15 or later
-- Apple silicon Mac: macOS 11.0 or later
-- A recent Xcode release with the macOS SDK
-- Swift 5 toolchain
-
-Clone and open the project:
+- A Mac running macOS 10.15 or later
+- Xcode with a current macOS SDK and Swift 5 toolchain
 
 ```bash
 git clone https://github.com/ythdzys/LightAudio-Editor.git
 cd LightAudio-Editor
-open "LightAudio Editor.xcodeproj"
-```
-
-Select the **LightAudio Editor** scheme and run it on **My Mac**, or build from Terminal:
-
-```bash
 xcodebuild \
   -project "LightAudio Editor.xcodeproj" \
   -scheme "LightAudio Editor" \
@@ -114,62 +157,9 @@ xcodebuild \
   build
 ```
 
-The built app is written to:
+The app is produced at `Build/DerivedData/Build/Products/Debug/LightAudio Editor.app`. You can also open `LightAudio Editor.xcodeproj`, select the **LightAudio Editor** scheme, and run on **My Mac**.
 
-```text
-Build/DerivedData/Build/Products/Debug/LightAudio Editor.app
-```
-
-## Beta Distribution
-
-Beta 2 is version `0.1.1` build `2` and uses bundle identifier `com.ythdzys.LightAudioEditor`. The repository includes scripts for a single Universal `arm64`/`x86_64` archive, Developer ID signing, Apple notarization, ticket stapling, Gatekeeper validation, and ZIP packaging. Packaging fails if the app or bundled encoder is missing either architecture, if the required compressed-audio encoders are unavailable, or if the Intel and Apple silicon slices do not retain their macOS 10.15 and 11.0 minimum versions respectively.
-
-See [BETA_RELEASE.md](BETA_RELEASE.md) for packaging instructions and the optional Apple Developer setup. Without a Developer ID identity, the script seals the complete app with an ad-hoc signature and labels the ZIP `ADHOC-UNNOTARIZED`; testers must approve that build once in **Privacy & Security**. Developer ID signing and notarization remain the recommended path for public distribution.
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-| --- | --- |
-| `Space` | Play or pause |
-| `Command-S` | Save project |
-| `Command-O` | Open project |
-| `Command-I` | Import media |
-| `Command-E` | Export |
-| `Command-Z` / `Shift-Command-Z` | Undo / redo |
-| `Command-C` / `Command-X` / `Command-V` | Copy / cut / paste clips |
-| `Command-D` | Duplicate selected clips |
-| `Delete` | Delete selected clips or keyframe |
-| `S` or `Command-B` | Toggle razor tool |
-| `I` / `O` | Set In / Out point |
-| `Option-X` | Clear In/Out range |
-| `L` | Toggle loop range |
-| `M` | Add marker |
-| `Shift-M` / `Shift-Option-M` | Next / previous marker |
-| `N` | Toggle snapping |
-| `Command-=` / `Command--` | Zoom in / out |
-| `Option-Command-=` / `Option-Command--` | Increase / decrease track height |
-| `Left Arrow` / `Right Arrow` | Nudge selected clips |
-| `Option-Left Arrow` / `Option-Right Arrow` | Previous / next clip edge |
-| `Home` / `End` | Jump to project start / end |
-
-Standard macOS shortcuts also apply to New, Save As, Preferences, and window commands.
-
-## Architecture
-
-```text
-LightAudio Editor/
-|-- App/         App lifecycle, main window, project coordination, recovery
-|-- Models/      Project, media, timeline, clip, track, waveform, export data
-|-- Services/    Import, relink, proxy, waveform, playback, render, export, cache
-|-- UI/          Media bin, timeline, clip, track header, inspector, dialogs
-`-- Utilities/   Timecode, format helpers, metadata hashing
-```
-
-The playback and native export paths share the same timeline audio-source processing model so trims, automation, fades, crossfades, clip/track mix controls, and master gain remain closely aligned.
-
-## Tests
-
-The regression suite covers project validation, recovery state, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, and cache-sensitive workflows.
+Run the regression suite with:
 
 ```bash
 xcodebuild \
@@ -180,31 +170,33 @@ xcodebuild \
   test
 ```
 
-Current verification: **59 tests passing** on both Apple silicon and Intel build paths, including timeline scroll invalidation and real bundled M4A, MP3, and FLAC exports.
+The current suite contains 59 tests covering project validation, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, and real bundled M4A/MP3/FLAC exports.
+
+## Repository Layout
+
+```text
+LightAudio Editor/       AppKit application source and resources
+LightAudio EditorTests/  Regression test suite
+Docs/                    Release, distribution, and branding documentation
+Scripts/                 Universal build, encoder, and notarization tooling
+ThirdParty/              Third-party source and license documentation
+```
+
+See [Contributing](CONTRIBUTING.md) before opening a pull request. Bug reports should use the [issue templates](https://github.com/ythdzys/LightAudio-Editor/issues/new/choose) and include the macOS version, Mac architecture, source format, exact steps, and any displayed error.
 
 ## Current Limitations
 
-- No video preview or video editing features
+- No video preview or video editing
 - No Audio Unit, VST, or other plug-in hosting
-- Three-band EQ exists only as a future-compatible project model and is not processed
-- Normalize-on-export is not implemented; the export option remains disabled
-- The bundled encoder is intentionally limited to AAC/M4A, MP3, and FLAC output from LightAudio Editor's rendered WAV mix; it is not a general-purpose FFmpeg distribution
-- Beta packages are ad-hoc signed and unnotarized; Gatekeeper approval is required on first launch
-
-## Technology
-
-- Swift 5
-- AppKit
-- AVFoundation / AVFAudio / AVAudioEngine
-- CryptoKit for stable cache and metadata identities
-- Bundled Universal FFmpeg/LAME helper through an internal process-based export backend
+- Three-band EQ is a future-compatible project model and is not processed
+- Normalize-on-export is not implemented
+- The bundled encoder is limited to LightAudio Editor's AAC/M4A, MP3, and FLAC export workflow
+- Public beta packages are currently ad-hoc signed and unnotarized
 
 ## Bundled Encoder and Licensing
 
-The included helper uses FFmpeg 9.0.1 and LAME 4.0, built without FFmpeg's GPL or nonfree configure options. License texts and exact build metadata ship in the app under `Contents/Resources/BundledEncoder`, and the reproducible build is documented in [ThirdParty/FFmpeg/README.md](ThirdParty/FFmpeg/README.md).
+LightAudio Editor includes FFmpeg 9.0.1 and LAME 4.0 as a separate, narrowly configured Universal command-line helper. It is not linked into the Swift executable. FFmpeg's GPL and nonfree configure options are disabled.
 
-```bash
-./Scripts/build-bundled-ffmpeg.sh
-```
+License notices and exact build metadata ship under `LightAudio Editor/Resources/BundledEncoder`. Reproducible build details are documented in [ThirdParty/FFmpeg/README.md](ThirdParty/FFmpeg/README.md), and every binary release includes a corresponding-source archive.
 
-`Scripts/build-beta.sh` also prepares a corresponding-source ZIP containing the verified upstream source archives and build recipe. Publish that source ZIP beside every beta binary that contains the helper.
+The LightAudio Editor application source does not currently declare an open-source license. Publication of the source does not grant rights beyond those provided by applicable law and GitHub's Terms of Service. Third-party components remain governed by their respective license files.

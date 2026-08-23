@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Download the latest beta
+    url: https://github.com/ythdzys/LightAudio-Editor/releases
+    about: Confirm the issue still occurs with the newest available build.
