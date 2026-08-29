@@ -8,7 +8,7 @@ final class MediaImportService {
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 guard AudioFormatHelpers.supportedImportExtension(url.pathExtension) else {
-                    throw NSError(domain: "LightAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unsupported media type."])
+                    throw NSError(domain: "LightAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Unsupported media type.")])
                 }
                 let isVideo = AudioFormatHelpers.isVideoExtension(url.pathExtension)
                 let metadata = try self.metadata(for: url)
@@ -53,7 +53,7 @@ final class MediaImportService {
             }
         } else {
             if isVideo {
-                throw NSError(domain: "LightAudio", code: 2, userInfo: [NSLocalizedDescriptionKey: "This video does not contain an audio track."])
+                throw NSError(domain: "LightAudio", code: 2, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This video does not contain an audio track.")])
             }
             let file = try AVAudioFile(forReading: url)
             sampleRate = file.fileFormat.sampleRate
@@ -64,7 +64,7 @@ final class MediaImportService {
         }
 
         guard duration.isFinite, duration > 0, sampleRate > 0, channelCount > 0 else {
-            throw NSError(domain: "LightAudio", code: 3, userInfo: [NSLocalizedDescriptionKey: "This media does not contain readable audio."])
+            throw NSError(domain: "LightAudio", code: 3, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This media does not contain readable audio.")])
         }
 
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value

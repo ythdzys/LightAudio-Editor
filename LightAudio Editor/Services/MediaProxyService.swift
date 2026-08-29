@@ -267,14 +267,14 @@ final class MediaProxyService {
     private func makeExportSession(sourceURL: URL, cacheKey: String) throws -> (session: AVAssetExportSession, stagingURL: URL, outputURL: URL) {
         let asset = AVURLAsset(url: sourceURL)
         guard !asset.tracks(withMediaType: .audio).isEmpty else {
-            throw proxyError("This video does not contain an audio track.")
+            throw proxyError(L10n.tr("This video does not contain an audio track."))
         }
         try FileManager.default.createDirectory(at: proxyDirectory, withIntermediateDirectories: true)
         let outputURL = managedProxyURL(for: cacheKey)
         let stagingURL = proxyDirectory.appendingPathComponent(".\(cacheKey).\(UUID().uuidString).partial.m4a")
         try? FileManager.default.removeItem(at: stagingURL)
         guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
-            throw proxyError("This video's audio cannot be exported by AVFoundation.")
+            throw proxyError(L10n.tr("This video's audio cannot be exported by AVFoundation."))
         }
         session.outputURL = stagingURL
         session.outputFileType = .m4a
@@ -284,7 +284,7 @@ final class MediaProxyService {
 
     private func publishProxy(stagingURL: URL, outputURL: URL) throws -> URL {
         guard isUsableProxy(stagingURL) else {
-            throw proxyError("Generated audio proxy could not be read.")
+            throw proxyError(L10n.tr("Generated audio proxy could not be read."))
         }
         if isUsableProxy(outputURL) {
             return outputURL
@@ -295,7 +295,7 @@ final class MediaProxyService {
         try FileManager.default.moveItem(at: stagingURL, to: outputURL)
         guard isUsableProxy(outputURL) else {
             try? FileManager.default.removeItem(at: outputURL)
-            throw proxyError("Generated audio proxy could not be read.")
+            throw proxyError(L10n.tr("Generated audio proxy could not be read."))
         }
         return outputURL
     }

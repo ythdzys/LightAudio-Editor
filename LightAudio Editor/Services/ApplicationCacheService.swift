@@ -8,9 +8,9 @@ struct ApplicationCacheClearResult {
     var summary: String {
         let total = waveformFileCount + proxyFileCount + recoveryFileCount
         if total == 0 {
-            return "App cache is already empty"
+            return L10n.tr("App cache is already empty")
         }
-        return "Cleared \(total) cached item\(total == 1 ? "" : "s")"
+        return L10n.format(total == 1 ? "Cleared %d cached item" : "Cleared %d cached items", total)
     }
 }
 

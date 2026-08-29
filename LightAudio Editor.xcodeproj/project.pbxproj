@@ -46,6 +46,8 @@
 		BF0000010000000000000027 /* BundledEncoder in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001027 /* BundledEncoder */; };
 		BF0000010000000000000028 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001028 /* LICENSE */; };
 		BF0000010000000000000029 /* NOTICE in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001029 /* NOTICE */; };
+		BF000001000000000000002A /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000102A /* Localization.swift */; };
+		BF000001000000000000002B /* Localization in Resources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000102B /* Localization */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -91,6 +93,8 @@
 		BF0000010000000000001027 /* BundledEncoder */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/BundledEncoder; sourceTree = "<group>"; };
 		BF0000010000000000001028 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = SOURCE_ROOT; };
 		BF0000010000000000001029 /* NOTICE */ = {isa = PBXFileReference; lastKnownFileType = text; path = NOTICE; sourceTree = SOURCE_ROOT; };
+		BF000001000000000000102A /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities/Localization.swift; sourceTree = "<group>"; };
+		BF000001000000000000102B /* Localization */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Localization; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -143,6 +147,7 @@
 				BF0000010000000000001000 /* Info.plist */,
 				BF0000010000000000001024 /* Assets.xcassets */,
 				BF0000010000000000001027 /* BundledEncoder */,
+				BF000001000000000000102B /* Localization */,
 				BF0000010000000000001001 /* AppDelegate.swift */,
 				BF0000010000000000001002 /* MainWindowController.swift */,
 				BF0000010000000000001003 /* ProjectController.swift */,
@@ -177,6 +182,7 @@
 				BF0000010000000000001022 /* ExternalEncoderSettings.swift */,
 				BF0000010000000000001023 /* PreferencesWindowController.swift */,
 				BF0000010000000000001025 /* ApplicationCacheService.swift */,
+				BF000001000000000000102A /* Localization.swift */,
 			);
 			path = "LightAudio Editor";
 			sourceTree = "<group>";
@@ -246,6 +252,7 @@
 				BF0000010000000000000027 /* BundledEncoder in Resources */,
 				BF0000010000000000000028 /* LICENSE in Resources */,
 				BF0000010000000000000029 /* NOTICE in Resources */,
+				BF000001000000000000002B /* Localization in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -290,6 +297,7 @@
 				BF0000010000000000000022 /* ExternalEncoderSettings.swift in Sources */,
 				BF0000010000000000000023 /* PreferencesWindowController.swift in Sources */,
 				BF0000010000000000000025 /* ApplicationCacheService.swift in Sources */,
+				BF000001000000000000002A /* Localization.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -321,7 +329,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = YES;
@@ -348,7 +356,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;

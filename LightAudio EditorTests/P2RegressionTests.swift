@@ -3,6 +3,44 @@ import AVFoundation
 @testable import LightAudio_Editor
 
 final class P2RegressionTests: XCTestCase {
+    func testSystemLanguageResolutionSupportsSimplifiedChineseLocales() {
+        XCTAssertEqual(
+            AppLanguage.resolvedIdentifier(preference: .system, preferredLanguages: ["zh-Hans-AU"]),
+            "zh-Hans"
+        )
+        XCTAssertEqual(
+            AppLanguage.resolvedIdentifier(preference: .system, preferredLanguages: ["en-AU"]),
+            "en"
+        )
+        XCTAssertEqual(
+            AppLanguage.resolvedIdentifier(preference: .simplifiedChinese, preferredLanguages: ["en-AU"]),
+            "zh-Hans"
+        )
+    }
+
+    func testSimplifiedChineseLocalizationResourceIsBundled() {
+        XCTAssertEqual(
+            L10n.translated("Ready", languageIdentifier: "zh-Hans"),
+            "就绪"
+        )
+        XCTAssertEqual(
+            L10n.translated("Export Audio", languageIdentifier: "zh-Hans"),
+            "导出音频"
+        )
+        XCTAssertEqual(
+            L10n.translated("Could not create the playback audio format.", languageIdentifier: "zh-Hans"),
+            "无法创建播放音频格式。"
+        )
+        XCTAssertEqual(
+            L10n.translated("Audio sample-rate conversion failed.", languageIdentifier: "zh-Hans"),
+            "音频采样率转换失败。"
+        )
+        XCTAssertEqual(
+            L10n.translated("Cannot normalize silent clip.", languageIdentifier: "zh-Hans"),
+            "无法标准化静音片段。"
+        )
+    }
+
     func testClippingDetectionIgnoresFloatingPointNoiseAtFullScale() {
         XCTAssertFalse(AudioPeakMath.isClipping(peak: 1.00001))
         XCTAssertTrue(AudioPeakMath.isClipping(peak: 1.001))
@@ -299,7 +337,11 @@ final class P2RegressionTests: XCTestCase {
             .write(to: projectURL, options: .atomic)
 
         XCTAssertThrowsError(try ProjectFileService().load(from: projectURL)) { error in
-            XCTAssertTrue(error.localizedDescription.contains("newer version"))
+            let expected = L10n.format(
+                "This project was created by a newer version of LightAudio Editor (format %d). Update the app before opening it.",
+                Project.currentFormatVersion + 1
+            )
+            XCTAssertTrue(error.localizedDescription.contains(expected))
         }
     }
 
@@ -1146,7 +1188,7 @@ final class P2RegressionTests: XCTestCase {
         let pending = controller.relink(assetID: asset.id, replacementURL: replacementURL)
         XCTAssertTrue(pending.accepted)
         XCTAssertTrue(pending.requiresConfirmation)
-        XCTAssertTrue(pending.warnings.contains("audio checksum differs"))
+        XCTAssertTrue(pending.warnings.contains(L10n.tr("audio checksum differs")))
         XCTAssertTrue(try XCTUnwrap(controller.project.asset(id: asset.id)).isMissing)
         XCTAssertEqual(try XCTUnwrap(controller.project.asset(id: asset.id)).originalPath, originalURL.path)
 
@@ -1187,7 +1229,7 @@ final class P2RegressionTests: XCTestCase {
         wait(for: [scanCompleted], timeout: 5)
 
         XCTAssertTrue(try XCTUnwrap(controller.project.asset(id: asset.id)).isMissing)
-        XCTAssertTrue(messages.joined(separator: "\n").contains("manual confirmation"))
+        XCTAssertTrue(messages.joined(separator: "\n").contains(L10n.tr("candidate needs manual confirmation")))
     }
 
     func testSourceModificationIsMarkedUnavailableBeforeRendering() throws {
@@ -1498,7 +1540,10 @@ final class P2RegressionTests: XCTestCase {
         )
 
         XCTAssertThrowsError(try invalidSettings.validate()) { error in
-            XCTAssertTrue(error.localizedDescription.contains("MP3 export supports"))
+            XCTAssertEqual(
+                error.localizedDescription,
+                L10n.tr("MP3 export supports 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, or 48000 Hz. Choose a compatible sample rate.")
+            )
         }
         XCTAssertNoThrow(try ExportSettings(
             format: .mp3,

@@ -39,8 +39,8 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
     private let searchField = NSSearchField()
     private let filterPopup = NSPopUpButton()
     private let sortPopup = NSPopUpButton()
-    private let placeholderTitle = PassthroughLabel(labelWithString: "Import audio or video files")
-    private let placeholderHint = PassthroughLabel(labelWithString: "Drag files here or right-click to import")
+    private let placeholderTitle = PassthroughLabel(labelWithString: L10n.tr("Import audio or video files"))
+    private let placeholderHint = PassthroughLabel(labelWithString: L10n.tr("Drag files here or right-click to import"))
     private var filterOption: MediaFilterOption = .all
     private var sortOption: MediaSortOption = MediaSortOption.saved
 
@@ -108,7 +108,7 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
         rootView.menuProvider = { [weak self] _ in self?.emptyMenu() }
         rootView.onURLsDropped = { [weak self] urls in self?.onImportURLs?(urls) }
 
-        searchField.placeholderString = "Search media"
+        searchField.placeholderString = L10n.tr("Search media")
         searchField.delegate = self
         searchField.target = self
         searchField.action = #selector(searchChanged)
@@ -185,7 +185,9 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
         }
         let asset = displayedAssets[row]
         let usage = usageCounts[asset.id, default: 0]
-        let usageText = usage == 0 ? "unused" : "\(usage) use\(usage == 1 ? "" : "s")"
+        let usageText = usage == 0
+            ? L10n.tr("unused")
+            : L10n.format(usage == 1 ? "%d use" : "%d uses", usage)
         cell.textField?.stringValue = "\(asset.displayName)  \(statusText(for: asset))  \(usageText)"
         cell.textField?.textColor = asset.isMissing || asset.waveformStatus == .failed || asset.proxyStatus == .failed || asset.proxyStatus == .unsupported ? .systemRed : .labelColor
         return cell
@@ -295,7 +297,7 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
     }
 
     private func targetedItem(title: String, action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        let item = NSMenuItem(title: L10n.tr(title), action: action, keyEquivalent: "")
         item.target = self
         return item
     }
@@ -362,31 +364,31 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
 
     private func statusText(for asset: MediaAsset) -> String {
         if asset.isMissing || asset.proxyStatus == .missing {
-            return "Missing"
+            return L10n.tr("Missing")
         }
         switch asset.proxyStatus {
         case .generating:
-            return "Generating audio proxy"
+            return L10n.tr("Generating audio proxy")
         case .failed:
-            return "Proxy failed"
+            return L10n.tr("Proxy failed")
         case .unsupported:
-            return "Unsupported"
+            return L10n.tr("Unsupported")
         case .ready, .none:
             break
         case .missing:
-            return "Missing"
+            return L10n.tr("Missing")
         }
         switch asset.waveformStatus {
         case .notGenerated:
-            return "Pending waveform"
+            return L10n.tr("Pending waveform")
         case .generating:
-            return "Generating waveform"
+            return L10n.tr("Generating waveform")
         case .ready:
-            return "Ready"
+            return L10n.tr("Ready")
         case .failed:
-            return "Waveform failed"
+            return L10n.tr("Waveform failed")
         case .missing:
-            return "Missing"
+            return L10n.tr("Missing")
         }
     }
 
@@ -395,11 +397,11 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
         placeholderTitle.isHidden = !isEmptyDisplay
         placeholderHint.isHidden = !isEmptyDisplay
         if assets.isEmpty {
-            placeholderTitle.stringValue = "Import audio or video files"
-            placeholderHint.stringValue = "Drag files here or right-click to import"
+            placeholderTitle.stringValue = L10n.tr("Import audio or video files")
+            placeholderHint.stringValue = L10n.tr("Drag files here or right-click to import")
         } else {
-            placeholderTitle.stringValue = "No matching media"
-            placeholderHint.stringValue = "Clear search or change filter"
+            placeholderTitle.stringValue = L10n.tr("No matching media")
+            placeholderHint.stringValue = L10n.tr("Clear search or change filter")
         }
     }
 
@@ -450,12 +452,12 @@ private enum MediaSortOption: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .name: return "Name"
-        case .duration: return "Duration"
-        case .mediaType: return "Type"
-        case .status: return "Status"
-        case .dateImported: return "Imported"
-        case .used: return "Used"
+        case .name: return L10n.tr("Name")
+        case .duration: return L10n.tr("Duration")
+        case .mediaType: return L10n.tr("Type")
+        case .status: return L10n.tr("Status")
+        case .dateImported: return L10n.tr("Imported")
+        case .used: return L10n.tr("Used")
         }
     }
 }
@@ -472,14 +474,14 @@ private enum MediaFilterOption: CaseIterable {
 
     var title: String {
         switch self {
-        case .all: return "All"
-        case .audio: return "Audio"
-        case .videoAudio: return "Video"
-        case .missing: return "Missing"
-        case .waveformFailed: return "Waveform Failed"
-        case .proxyFailed: return "Proxy Failed"
-        case .used: return "Used"
-        case .unused: return "Unused"
+        case .all: return L10n.tr("All")
+        case .audio: return L10n.tr("Audio")
+        case .videoAudio: return L10n.tr("Video")
+        case .missing: return L10n.tr("Missing")
+        case .waveformFailed: return L10n.tr("Waveform Failed")
+        case .proxyFailed: return L10n.tr("Proxy Failed")
+        case .used: return L10n.tr("Used")
+        case .unused: return L10n.tr("Unused")
         }
     }
 }

@@ -222,7 +222,7 @@ final class ProjectController {
 
     private func importMedia(url: URL, addToTimeline: Bool, completion: ((MediaImportOutcome) -> Void)?) {
         guard requireAllMediaOnline() else {
-            let error = NSError(domain: "LightAudio", code: 33, userInfo: [NSLocalizedDescriptionKey: "Missing media must be relinked before importing new media."])
+            let error = NSError(domain: "LightAudio", code: 33, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Missing media must be relinked before importing new media.")])
             completion?(.failed(error))
             return
         }
@@ -433,7 +433,7 @@ final class ProjectController {
         guard requireAllMediaOnline() else { return }
         guard let index = project.timeline.tracks.firstIndex(where: { $0.id == trackID }) else { return }
         guard project.timeline.tracks[index].clips.isEmpty || allowNonEmpty else {
-            delegate?.projectController(self, didFailWith: NSError(domain: "LightAudio", code: 31, userInfo: [NSLocalizedDescriptionKey: "Only empty tracks can be deleted without confirmation."]))
+            delegate?.projectController(self, didFailWith: NSError(domain: "LightAudio", code: 31, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Only empty tracks can be deleted without confirmation.")]))
             return
         }
         guard project.timeline.tracks.count > 1 else { return }
@@ -1015,16 +1015,16 @@ final class ProjectController {
 
     func normalizeClip(clipID: UUID, targetPeakDB: Double, completion: @escaping (Result<Double, Error>) -> Void) {
         guard requireAllMediaOnline() else {
-            completion(.failure(projectError(code: 56, message: "Relink missing media before editing this project.")))
+            completion(.failure(projectError(code: 56, message: L10n.tr("Relink missing media before editing this project."))))
             return
         }
         guard clipIsEditable(clipID), let location = locateClip(clipID) else {
-            completion(.failure(projectError(code: 57, message: "Cannot normalize a clip on a locked or unavailable track.")))
+            completion(.failure(projectError(code: 57, message: L10n.tr("Cannot normalize a clip on a locked or unavailable track."))))
             return
         }
         let clip = project.timeline.tracks[location.track].clips[location.clip]
         guard let asset = project.asset(id: clip.sourceAssetID), !asset.isMissing, let url = asset.audioSourceURL else {
-            completion(.failure(projectError(code: 51, message: "Cannot normalize missing or unavailable media.")))
+            completion(.failure(projectError(code: 51, message: L10n.tr("Cannot normalize missing or unavailable media."))))
             return
         }
         let targetDB = min(0, max(-60, targetPeakDB))
@@ -1034,18 +1034,18 @@ final class ProjectController {
             do {
                 let peak = try self.analyzePeak(for: clip, audioURL: url)
                 guard peak > 0.000001 else {
-                    throw self.projectError(code: 52, message: "Cannot normalize silent clip.")
+                    throw self.projectError(code: 52, message: L10n.tr("Cannot normalize silent clip."))
                 }
                 let targetLinear = MixMath.linearGain(forDB: targetDB)
                 let newGain = MixMath.clampClipGainLinear(targetLinear / peak)
                 DispatchQueue.main.async {
                     guard self.requireAllMediaOnline() else {
-                        completion(.failure(self.projectError(code: 56, message: "Relink missing media before editing this project.")))
+                        completion(.failure(self.projectError(code: 56, message: L10n.tr("Relink missing media before editing this project."))))
                         return
                     }
                     guard self.projectGeneration == projectGenerationAtStart,
                           let current = self.locateClip(clipID) else {
-                        completion(.failure(self.projectError(code: 58, message: "The project changed before normalization completed.")))
+                        completion(.failure(self.projectError(code: 58, message: L10n.tr("The project changed before normalization completed."))))
                         return
                     }
                     let currentClip = self.project.timeline.tracks[current.track].clips[current.clip]
@@ -1057,7 +1057,7 @@ final class ProjectController {
                           currentClip.sourceEnd == clip.sourceEnd,
                           currentClip.gain == clip.gain,
                           currentSourcePath == analyzedSourcePath else {
-                        completion(.failure(self.projectError(code: 58, message: "The clip changed before normalization completed.")))
+                        completion(.failure(self.projectError(code: 58, message: L10n.tr("The clip changed before normalization completed."))))
                         return
                     }
                     self.registerUndo("Normalize Clip")
@@ -1175,7 +1175,7 @@ final class ProjectController {
 
     func relink(assetID: UUID, replacementURL: URL, allowingMetadataWarnings: Bool = false) -> RelinkResult {
         guard let index = project.assets.firstIndex(where: { $0.id == assetID }) else {
-            return RelinkResult(accepted: false, reason: "Asset not found.", updatedAsset: nil)
+            return RelinkResult(accepted: false, reason: L10n.tr("Asset not found."), updatedAsset: nil)
         }
         let result = relinkService.verifyAndRelink(asset: project.assets[index], replacementURL: replacementURL, projectURL: projectURL)
         return applyRelinkResult(result, to: assetID, allowingMetadataWarnings: allowingMetadataWarnings)
@@ -1191,7 +1191,7 @@ final class ProjectController {
         completion: @escaping (RelinkResult) -> Void
     ) {
         guard let asset = project.assets.first(where: { $0.id == assetID }) else {
-            completion(RelinkResult(accepted: false, reason: "Asset not found.", updatedAsset: nil))
+            completion(RelinkResult(accepted: false, reason: L10n.tr("Asset not found."), updatedAsset: nil))
             return
         }
         let capturedProjectURL = projectURL
@@ -1212,7 +1212,7 @@ final class ProjectController {
                       self.project.id == capturedProjectID,
                       let current = self.project.assets.first(where: { $0.id == assetID }),
                       current.originalPath == expectedOriginalPath else {
-                    completion(RelinkResult(accepted: false, reason: "The project changed before media verification completed.", updatedAsset: nil))
+                    completion(RelinkResult(accepted: false, reason: L10n.tr("The project changed before media verification completed."), updatedAsset: nil))
                     return
                 }
                 completion(self.applyRelinkResult(result, to: assetID, allowingMetadataWarnings: allowingMetadataWarnings))
@@ -1240,11 +1240,11 @@ final class ProjectController {
                         assetID: asset.id,
                         expectedOriginalPath: asset.originalPath,
                         fileName: asset.metadata.fileName,
-                        result: RelinkResult(accepted: false, reason: "not found", updatedAsset: nil)
+                        result: RelinkResult(accepted: false, reason: L10n.tr("not found"), updatedAsset: nil)
                     )
                 }
 
-                var latestResult = RelinkResult(accepted: false, reason: "No candidate matched closely enough.", updatedAsset: nil)
+                var latestResult = RelinkResult(accepted: false, reason: L10n.tr("No candidate matched closely enough."), updatedAsset: nil)
                 for candidate in candidates {
                     let result = service.verifyAndRelink(asset: asset, replacementURL: candidate, projectURL: projectURL)
                     if result.isSafeForAutomaticRelink {
@@ -1274,23 +1274,28 @@ final class ProjectController {
                 var messages: [String] = []
                 for attempt in attempts {
                     guard let current = self.project.assets.first(where: { $0.id == attempt.assetID }) else {
-                        messages.append("\(attempt.fileName): removed before relinking")
+                        messages.append(L10n.format("%@: removed before relinking", attempt.fileName))
                         continue
                     }
                     guard current.isMissing, current.originalPath == attempt.expectedOriginalPath else {
-                        messages.append("\(attempt.fileName): already resolved")
+                        messages.append(L10n.format("%@: already resolved", attempt.fileName))
                         continue
                     }
                     guard attempt.result.isSafeForAutomaticRelink else {
                         if attempt.result.requiresConfirmation {
-                            messages.append("\(attempt.fileName): candidate needs manual confirmation (\(attempt.result.warnings.joined(separator: ", ")))")
+                            messages.append(L10n.format(
+                                "%@: %@ (%@)",
+                                attempt.fileName,
+                                L10n.tr("candidate needs manual confirmation"),
+                                attempt.result.warnings.joined(separator: L10n.tr(", "))
+                            ))
                         } else {
-                            messages.append("\(attempt.fileName): \(attempt.result.reason)")
+                            messages.append(L10n.format("%@: %@", attempt.fileName, attempt.result.reason))
                         }
                         continue
                     }
                     let applied = self.applyRelinkResult(attempt.result, to: attempt.assetID)
-                    messages.append("\(attempt.fileName): \(applied.reason)")
+                    messages.append(L10n.format("%@: %@", attempt.fileName, applied.reason))
                 }
                 completion(messages)
             }
@@ -1353,7 +1358,7 @@ final class ProjectController {
     func removeAssetIfUnused(assetID: UUID) {
         guard requireAllMediaOnline() else { return }
         guard !project.timeline.tracks.contains(where: { track in track.clips.contains(where: { $0.sourceAssetID == assetID }) }) else {
-            delegate?.projectController(self, didFailWith: NSError(domain: "LightAudio", code: 32, userInfo: [NSLocalizedDescriptionKey: "Remove clips that use this media before removing it from the project."]))
+            delegate?.projectController(self, didFailWith: NSError(domain: "LightAudio", code: 32, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Remove clips that use this media before removing it from the project.")]))
             return
         }
         guard let index = project.assets.firstIndex(where: { $0.id == assetID }) else { return }
@@ -1462,7 +1467,7 @@ final class ProjectController {
             throw NSError(
                 domain: "LightAudio",
                 code: 41,
-                userInfo: [NSLocalizedDescriptionKey: "Cannot collect project: \(missing.count) file\(missing.count == 1 ? "" : "s") are missing."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.format(missing.count == 1 ? "Cannot collect project: %d file is missing." : "Cannot collect project: %d files are missing.", missing.count)]
             )
         }
 
@@ -1597,10 +1602,10 @@ final class ProjectController {
         let availableFrames = max(0, file.length - startFrame)
         var remaining = min(requestedFrames, availableFrames)
         guard remaining > 0 else {
-            throw projectError(code: 53, message: "The selected clip has no readable audio.")
+            throw projectError(code: 53, message: L10n.tr("The selected clip has no readable audio."))
         }
         guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 16384) else {
-            throw projectError(code: 54, message: "Could not allocate audio analysis buffer.")
+            throw projectError(code: 54, message: L10n.tr("Could not allocate audio analysis buffer."))
         }
         file.framePosition = startFrame
         var peak = 0.0
@@ -1610,7 +1615,7 @@ final class ProjectController {
             let frameCount = Int(buffer.frameLength)
             guard frameCount > 0 else { break }
             guard let channels = buffer.floatChannelData else {
-                throw projectError(code: 55, message: "Unsupported audio sample format.")
+                throw projectError(code: 55, message: L10n.tr("Unsupported audio sample format."))
             }
             for channel in 0..<Int(buffer.format.channelCount) {
                 for frame in 0..<frameCount {
@@ -2101,7 +2106,7 @@ final class ProjectController {
         let error = NSError(
             domain: "LightAudio",
             code: 22,
-            userInfo: [NSLocalizedDescriptionKey: "Unlock the track before editing clips on it."]
+            userInfo: [NSLocalizedDescriptionKey: L10n.tr("Unlock the track before editing clips on it.")]
         )
         delegate?.projectController(self, didFailWith: error)
     }
@@ -2120,7 +2125,7 @@ final class ProjectController {
             let error = NSError(
                 domain: "LightAudio",
                 code: 21,
-                userInfo: [NSLocalizedDescriptionKey: "Relink missing media before editing this project:\n\(names)"]
+                userInfo: [NSLocalizedDescriptionKey: L10n.format("Relink missing media before editing this project:\n%@", names)]
             )
             delegate?.projectController(self, didFailWith: error)
             return false
@@ -2219,7 +2224,7 @@ final class ProjectController {
             target.notify(audioChanged: true)
             target.prepareAvailableAssets()
         }
-        undoManager.setActionName(name)
+        undoManager.setActionName(L10n.tr(name))
     }
 
     private func captureSaveCheckpoint() {

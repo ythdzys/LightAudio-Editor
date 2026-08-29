@@ -521,11 +521,11 @@ final class TimelineView: NSView {
             NSColor.systemBlue.withAlphaComponent(0.65).setStroke()
             if startX >= renderRect.minX - 1 && startX <= renderRect.maxX + 1 {
                 NSBezierPath.strokeLine(from: NSPoint(x: startX, y: renderRect.minY), to: NSPoint(x: startX, y: renderRect.maxY))
-                drawRangeFlag(title: "IN", x: startX, in: renderRect)
+                drawRangeFlag(title: L10n.tr("IN"), x: startX, in: renderRect)
             }
             if endX >= renderRect.minX - 1 && endX <= renderRect.maxX + 1 {
                 NSBezierPath.strokeLine(from: NSPoint(x: endX, y: renderRect.minY), to: NSPoint(x: endX, y: renderRect.maxY))
-                drawRangeFlag(title: "OUT", x: endX, in: renderRect)
+                drawRangeFlag(title: L10n.tr("OUT"), x: endX, in: renderRect)
             }
         } else {
             if let inPoint = inPoint {
@@ -533,7 +533,7 @@ final class TimelineView: NSView {
                 if markerX >= renderRect.minX - 1 && markerX <= renderRect.maxX + 1 {
                     NSColor.systemBlue.withAlphaComponent(0.75).setStroke()
                     NSBezierPath.strokeLine(from: NSPoint(x: markerX, y: renderRect.minY), to: NSPoint(x: markerX, y: renderRect.maxY))
-                    drawRangeFlag(title: "IN", x: markerX, in: renderRect)
+                    drawRangeFlag(title: L10n.tr("IN"), x: markerX, in: renderRect)
                 }
             }
             if let outPoint = outPoint {
@@ -541,7 +541,7 @@ final class TimelineView: NSView {
                 if markerX >= renderRect.minX - 1 && markerX <= renderRect.maxX + 1 {
                     NSColor.systemPurple.withAlphaComponent(0.75).setStroke()
                     NSBezierPath.strokeLine(from: NSPoint(x: markerX, y: renderRect.minY), to: NSPoint(x: markerX, y: renderRect.maxY))
-                    drawRangeFlag(title: "OUT", x: markerX, in: renderRect)
+                    drawRangeFlag(title: L10n.tr("OUT"), x: markerX, in: renderRect)
                 }
             }
         }
@@ -549,7 +549,7 @@ final class TimelineView: NSView {
 
     private func drawRangeFlag(title: String, x: CGFloat, in renderRect: NSRect) {
         guard x >= stickyHeaderMaxX else { return }
-        let rect = NSRect(x: x + 3, y: 4, width: title == "IN" ? 22 : 32, height: 14)
+        let rect = NSRect(x: x + 3, y: 4, width: title == L10n.tr("IN") ? 22 : 32, height: 14)
         guard rect.intersects(renderRect) else { return }
         NSColor.systemBlue.withAlphaComponent(0.88).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
@@ -755,7 +755,7 @@ final class TimelineView: NSView {
             .font: NSFont.systemFont(ofSize: 15, weight: .medium),
             .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.65)
         ]
-        let text = "Drag media here to start editing" as NSString
+        let text = L10n.tr("Drag media here to start editing") as NSString
         let size = text.size(withAttributes: attrs)
         let visible = viewportBounds
         let x = max(stickyHeaderMaxX + 24, visible.midX - size.width / 2)
@@ -852,12 +852,14 @@ final class TimelineView: NSView {
             drawVolumeEnvelope(for: clip, in: rect, selected: selected)
         }
 
-        let title = offline ? "\(clip.customName ?? asset?.displayName ?? "Missing") - MISSING" : (clip.customName ?? asset?.displayName ?? "Clip")
+        let title = offline
+            ? L10n.format("%@ - MISSING", clip.customName ?? asset?.displayName ?? L10n.tr("Missing"))
+            : (clip.customName ?? asset?.displayName ?? L10n.tr("Clip"))
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: compact ? 10 : 12, weight: .medium), .foregroundColor: NSColor.white]
         (title as NSString).draw(in: rect.insetBy(dx: 8, dy: 5), withAttributes: attrs)
 
         if !compact {
-            let detail = String(format: "clip %.0f dB  pan %+.0f", MixMath.db(forLinearGain: clip.gain), clip.pan * 100)
+            let detail = L10n.format("clip %.0f dB  pan %+.0f", MixMath.db(forLinearGain: clip.gain), clip.pan * 100)
             let detailAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor(calibratedWhite: 1, alpha: 0.75)]
             (detail as NSString).draw(in: NSRect(x: rect.minX + 8, y: rect.maxY - 18, width: rect.width - 16, height: 14), withAttributes: detailAttrs)
         }
@@ -964,8 +966,8 @@ final class TimelineView: NSView {
     }
 
     private func drawTrimTooltip(_ preview: TrimDragPreview, clipRect: NSRect, color: NSColor) {
-        let title = preview.edge == .left ? "Start" : "End"
-        let text = "\(title) \(Timecode.string(preview.timelineTime))\nDuration \(Timecode.string(preview.duration))" as NSString
+        let title = L10n.tr(preview.edge == .left ? "Start" : "End")
+        let text = L10n.format("%@ %@\nDuration %@", title, Timecode.string(preview.timelineTime), Timecode.string(preview.duration)) as NSString
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
             .foregroundColor: NSColor.white
@@ -1326,16 +1328,16 @@ final class TimelineView: NSView {
             onSelectClipWithModifiers?(fadeHit.clip.id, false, selectedClipIDs.contains(fadeHit.clip.id))
             if event.clickCount >= 2 {
                 onSetClipFade?(fadeHit.clip.id, fadeHit.edge, 0)
-                onStatusMessage?(fadeHit.edge == .left ? "Fade in: 0.00s" : "Fade out: 0.00s")
+                onStatusMessage?(L10n.tr(fadeHit.edge == .left ? "Fade in: 0.00s" : "Fade out: 0.00s"))
                 return
             }
-            beginContinuousEdit(fadeHit.edge == .left ? "Fade In" : "Fade Out")
+            beginContinuousEdit(L10n.tr(fadeHit.edge == .left ? "Fade In" : "Fade Out"))
             fadeHandleDrag = FadeHandleDrag(clipID: fadeHit.clip.id, edge: fadeHit.edge, trackIndex: fadeHit.trackIndex)
             return
         }
         if let keyHit = hitVolumeKeyframe(at: point) {
             selectedVolumeKeyframe = VolumeKeyframeSelection(clipID: keyHit.clip.id, keyframeID: keyHit.keyframe.id)
-            beginContinuousEdit("Move Volume Keyframe")
+            beginContinuousEdit(L10n.tr("Move Volume Keyframe"))
             volumeKeyframeDrag = selectedVolumeKeyframe
             onSelectClipWithModifiers?(keyHit.clip.id, false, selectedClipIDs.contains(keyHit.clip.id))
             needsDisplay = true
@@ -1365,7 +1367,7 @@ final class TimelineView: NSView {
         if event.clickCount >= 2, volumeEnvelopeRect(in: rect).insetBy(dx: -2, dy: -4).contains(point) {
             let values = volumeEnvelopeValues(at: point, clip: hit.clip, in: volumeEnvelopeRect(in: rect))
             onAddVolumeKeyframe?(hit.clip.id, values.time, values.gainDB)
-            onStatusMessage?("Added volume keyframe")
+            onStatusMessage?(L10n.tr("Added volume keyframe"))
             return
         }
         let edge: TrimEdge?
@@ -1380,15 +1382,15 @@ final class TimelineView: NSView {
         var dragClipID = hit.clip.id
         if edge == nil, event.modifierFlags.contains(.option) {
             // Begin before duplicating so the duplicate and its drag are one undoable action.
-            beginContinuousEdit("Option-Drag Duplicate")
+            beginContinuousEdit(L10n.tr("Option-Drag Duplicate"))
             guard let duplicatedID = onDuplicateSelectionForDrag?(hit.clip.id) else {
                 endContinuousEdit()
                 return
             }
             dragClipID = duplicatedID
-            onStatusMessage?("Duplicating selected clips")
+            onStatusMessage?(L10n.tr("Duplicating selected clips"))
         } else {
-            beginContinuousEdit(edge == nil ? "Move Clip" : "Trim Clip")
+            beginContinuousEdit(L10n.tr(edge == nil ? "Move Clip" : "Trim Clip"))
         }
         dragState = DragState(clipID: dragClipID, offset: point.x - rect.minX, edge: edge)
     }
@@ -1399,7 +1401,7 @@ final class TimelineView: NSView {
             let point = convert(event.locationInWindow, from: nil)
             let duration = fadeDuration(at: point, clip: hit.clip, edge: fadeDrag.edge)
             onSetClipFade?(fadeDrag.clipID, fadeDrag.edge, duration)
-            onStatusMessage?(fadeDrag.edge == .left ? "Fade in: \(String(format: "%.2fs", duration))" : "Fade out: \(String(format: "%.2fs", duration))")
+            onStatusMessage?(L10n.format(fadeDrag.edge == .left ? "Fade in: %.2fs" : "Fade out: %.2fs", duration))
             return
         }
         if let keyDrag = volumeKeyframeDrag,
@@ -1407,7 +1409,7 @@ final class TimelineView: NSView {
             let point = convert(event.locationInWindow, from: nil)
             let values = volumeEnvelopeValues(at: point, clip: hit.clip, in: volumeEnvelopeRect(in: rect(for: hit.clip, trackIndex: hit.trackIndex)))
             onMoveVolumeKeyframe?(keyDrag.clipID, keyDrag.keyframeID, values.time, values.gainDB)
-            onStatusMessage?("Volume keyframe \(String(format: "%.1f dB", values.gainDB))")
+            onStatusMessage?(L10n.format("Volume keyframe %.1f dB", values.gainDB))
             return
         }
         if let trackMixDrag = trackMixDrag {
@@ -1439,13 +1441,13 @@ final class TimelineView: NSView {
                 hoverTrimEdge = TrimEdgeHover(clipID: dragState.clipID, edge: edge)
             }
             onTrimClip?(dragState.clipID, edge, snapped)
-            let label = edge == .left ? "Start" : "End"
-            onStatusMessage?("\(label) \(Timecode.string(snapped))")
+            let label = L10n.tr(edge == .left ? "Start" : "End")
+            onStatusMessage?(L10n.format("%@ %@", label, Timecode.string(snapped)))
             needsDisplay = true
         } else {
             trimDragPreview = nil
             onMoveClip?(dragState.clipID, snapped, trackIndex(forY: point.y))
-            onStatusMessage?("Moving clip to \(Timecode.string(snapped))")
+            onStatusMessage?(L10n.format("Moving clip to %@", Timecode.string(snapped)))
         }
     }
 
@@ -1707,12 +1709,12 @@ final class TimelineView: NSView {
             onToggleTrackLock?(track.id)
             return true
         } else if volumeSliderRect(y: trackY).insetBy(dx: -4, dy: -6).contains(point) {
-            beginContinuousEdit("Track Volume")
+            beginContinuousEdit(L10n.tr("Track Volume"))
             trackMixDrag = TrackMixDrag(trackID: track.id, trackIndex: index, control: .volume)
             updateTrackMixDrag(trackMixDrag!, at: point)
             return true
         } else if panSliderRect(y: trackY).insetBy(dx: -4, dy: -6).contains(point) {
-            beginContinuousEdit("Track Pan")
+            beginContinuousEdit(L10n.tr("Track Pan"))
             trackMixDrag = TrackMixDrag(trackID: track.id, trackIndex: index, control: .pan)
             updateTrackMixDrag(trackMixDrag!, at: point)
             return true
@@ -1723,7 +1725,7 @@ final class TimelineView: NSView {
     private func updateTrackMixDrag(_ drag: TrackMixDrag, at point: NSPoint) {
         let track = project.timeline.tracks[drag.trackIndex]
         guard !track.isLocked else {
-            onStatusMessage?("Cannot change mix controls on a locked track")
+            onStatusMessage?(L10n.tr("Cannot change mix controls on a locked track"))
             return
         }
         switch drag.control {
@@ -1732,13 +1734,13 @@ final class TimelineView: NSView {
             let fraction = min(1, max(0, (point.x - rect.minX) / rect.width))
             let db = Double(fraction) * 72 - 60
             onSetTrackVolume?(drag.trackID, db)
-            onStatusMessage?("Track volume \(String(format: "%.0f dB", db))")
+            onStatusMessage?(L10n.format("Track volume %.0f dB", db))
         case .pan:
             let rect = panSliderRect(y: trackY(for: drag.trackIndex))
             let fraction = min(1, max(0, (point.x - rect.minX) / rect.width))
             let pan = Double(fraction) * 2 - 1
             onSetTrackPan?(drag.trackID, pan)
-            onStatusMessage?("Track pan \(String(format: "%+.0f", pan * 100))")
+            onStatusMessage?(L10n.format("Track pan %+.0f", pan * 100))
         }
     }
 
@@ -1963,8 +1965,8 @@ final class TimelineView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         if point.y < rulerHeight, let marker = hitMarker(at: point) {
             let menu = NSMenu()
-            menu.addItem(withTitle: "Rename Marker", action: #selector(renameMarkerMenu(_:)), keyEquivalent: "").representedObject = marker.id
-            menu.addItem(withTitle: "Delete Marker", action: #selector(deleteMarkerMenu(_:)), keyEquivalent: "").representedObject = marker.id
+            menu.addItem(withTitle: L10n.tr("Rename Marker"), action: #selector(renameMarkerMenu(_:)), keyEquivalent: "").representedObject = marker.id
+            menu.addItem(withTitle: L10n.tr("Delete Marker"), action: #selector(deleteMarkerMenu(_:)), keyEquivalent: "").representedObject = marker.id
             menu.items.forEach { $0.target = self }
             return menu
         }
@@ -1973,80 +1975,81 @@ final class TimelineView: NSView {
             guard index < project.timeline.tracks.count else { return nil }
             let track = project.timeline.tracks[index]
             let menu = NSMenu()
-            menu.addItem(withTitle: "Rename Track", action: #selector(renameTrackMenu(_:)), keyEquivalent: "").representedObject = track.id
-            menu.addItem(withTitle: "Add Track Above", action: #selector(addTrackAboveMenu(_:)), keyEquivalent: "").representedObject = track.id
-            menu.addItem(withTitle: "Add Track Below", action: #selector(addTrackBelowMenu(_:)), keyEquivalent: "").representedObject = track.id
-            menu.addItem(withTitle: "Duplicate Track", action: #selector(duplicateTrackMenu(_:)), keyEquivalent: "").representedObject = track.id
-            menu.addItem(withTitle: "Delete Track", action: #selector(deleteTrackMenu(_:)), keyEquivalent: "").representedObject = track.id
-            menu.addItem(withTitle: track.isCollapsed ? "Expand Track" : "Collapse Track", action: #selector(toggleCollapseMenu(_:)), keyEquivalent: "").representedObject = track.id
-            menu.addItem(withTitle: "Reset Track Height", action: #selector(resetTrackHeightMenu(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: L10n.tr("Rename Track"), action: #selector(renameTrackMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr("Add Track Above"), action: #selector(addTrackAboveMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr("Add Track Below"), action: #selector(addTrackBelowMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr("Duplicate Track"), action: #selector(duplicateTrackMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr("Delete Track"), action: #selector(deleteTrackMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr(track.isCollapsed ? "Expand Track" : "Collapse Track"), action: #selector(toggleCollapseMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr("Reset Track Height"), action: #selector(resetTrackHeightMenu(_:)), keyEquivalent: "")
             menu.addItem(.separator())
-            menu.addItem(withTitle: track.isMuted ? "Unmute" : "Mute", action: #selector(toggleMuteMenu(_:)), keyEquivalent: "").representedObject = track.id
-            menu.addItem(withTitle: track.isSolo ? "Unsolo" : "Solo", action: #selector(toggleSoloMenu(_:)), keyEquivalent: "").representedObject = track.id
-            menu.addItem(withTitle: track.isLocked ? "Unlock" : "Lock", action: #selector(toggleLockMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr(track.isMuted ? "Unmute" : "Mute"), action: #selector(toggleMuteMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr(track.isSolo ? "Unsolo" : "Solo"), action: #selector(toggleSoloMenu(_:)), keyEquivalent: "").representedObject = track.id
+            menu.addItem(withTitle: L10n.tr(track.isLocked ? "Unlock" : "Lock"), action: #selector(toggleLockMenu(_:)), keyEquivalent: "").representedObject = track.id
             menu.items.forEach { $0.target = self }
             return menu
         }
         if let hit = hitClip(at: point) {
             onSelectClipWithModifiers?(hit.clip.id, false, selectedClipIDs.contains(hit.clip.id))
             let menu = NSMenu()
-            menu.addItem(withTitle: "Source: \(project.asset(id: hit.clip.sourceAssetID)?.displayName ?? "Missing")", action: nil, keyEquivalent: "")
+            menu.addItem(withTitle: L10n.format("Source: %@", project.asset(id: hit.clip.sourceAssetID)?.displayName ?? L10n.tr("Missing")), action: nil, keyEquivalent: "")
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Rename Clip", action: #selector(renameClipMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
-            let colorMenu = NSMenu(title: "Clip Color")
+            menu.addItem(withTitle: L10n.tr("Rename Clip"), action: #selector(renameClipMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
+            let colorMenu = NSMenu(title: L10n.tr("Clip Color"))
             for color in ClipColorLabel.allCases {
-                let item = NSMenuItem(title: color.displayName, action: #selector(setClipColorMenu(_:)), keyEquivalent: "")
+                let item = NSMenuItem(title: L10n.tr(color.displayName), action: #selector(setClipColorMenu(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = ClipColorMenuPayload(clipID: hit.clip.id, color: color)
                 item.state = hit.clip.colorLabel == color ? .on : .off
                 colorMenu.addItem(item)
             }
-            let colorItem = NSMenuItem(title: "Clip Color", action: nil, keyEquivalent: "")
+            let colorItem = NSMenuItem(title: L10n.tr("Clip Color"), action: nil, keyEquivalent: "")
             colorItem.submenu = colorMenu
             menu.addItem(colorItem)
             menu.addItem(fadeCurveMenu(title: "Fade In Curve", clipID: hit.clip.id, edge: .left, selectedCurve: hit.clip.fadeIn.curve))
             menu.addItem(fadeCurveMenu(title: "Fade Out Curve", clipID: hit.clip.id, edge: .right, selectedCurve: hit.clip.fadeOut.curve))
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Add Volume Keyframe at Playhead", action: #selector(addVolumeKeyframeMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
-            let clearAutomation = NSMenuItem(title: "Clear Clip Volume Automation", action: #selector(clearVolumeAutomationMenu(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: L10n.tr("Add Volume Keyframe at Playhead"), action: #selector(addVolumeKeyframeMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
+            let clearAutomation = NSMenuItem(title: L10n.tr("Clear Clip Volume Automation"), action: #selector(clearVolumeAutomationMenu(_:)), keyEquivalent: "")
             clearAutomation.representedObject = hit.clip.id
             clearAutomation.isEnabled = !hit.clip.volumeAutomationKeyframes.isEmpty
             menu.addItem(clearAutomation)
-            menu.addItem(withTitle: "Normalize Clip...", action: #selector(normalizeClipMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
+            menu.addItem(withTitle: L10n.tr("Normalize Clip..."), action: #selector(normalizeClipMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Create Crossfade", action: #selector(createCrossfadeMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
+            menu.addItem(withTitle: L10n.tr("Create Crossfade"), action: #selector(createCrossfadeMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             menu.addItem(crossfadeCurveMenu(clipID: hit.clip.id))
-            let removeCrossfades = NSMenuItem(title: "Remove Crossfades", action: #selector(removeCrossfadesMenu(_:)), keyEquivalent: "")
+            let removeCrossfades = NSMenuItem(title: L10n.tr("Remove Crossfades"), action: #selector(removeCrossfadesMenu(_:)), keyEquivalent: "")
             removeCrossfades.representedObject = hit.clip.id
             removeCrossfades.isEnabled = project.timeline.crossfades.contains { $0.leadingClipID == hit.clip.id || $0.trailingClipID == hit.clip.id }
             menu.addItem(removeCrossfades)
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Copy", action: #selector(copyMenu(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "Cut", action: #selector(cutMenu(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "Duplicate", action: #selector(duplicateMenu(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "Delete", action: #selector(deleteMenu(_:)), keyEquivalent: "")
-            menu.addItem(withTitle: "Ripple Delete", action: #selector(rippleDeleteMenu(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: L10n.tr("Copy"), action: #selector(copyMenu(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: L10n.tr("Cut"), action: #selector(cutMenu(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: L10n.tr("Duplicate"), action: #selector(duplicateMenu(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: L10n.tr("Delete"), action: #selector(deleteMenu(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: L10n.tr("Ripple Delete"), action: #selector(rippleDeleteMenu(_:)), keyEquivalent: "")
             if hit.clip.timelineStart < playheadTime && playheadTime < hit.clip.timelineStart + hit.clip.duration {
-                menu.addItem(withTitle: "Split at Playhead", action: #selector(splitAtPlayheadMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
+                menu.addItem(withTitle: L10n.tr("Split at Playhead"), action: #selector(splitAtPlayheadMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             }
             menu.items.forEach { $0.target = self }
             return menu
         }
         let menu = NSMenu()
-        menu.addItem(withTitle: "Add Marker at Playhead", action: #selector(addMarkerMenu(_:)), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.tr("Add Marker at Playhead"), action: #selector(addMarkerMenu(_:)), keyEquivalent: "").target = self
         return menu
     }
 
     private func fadeCurveMenu(title: String, clipID: UUID, edge: TrimEdge, selectedCurve: FadeCurve) -> NSMenuItem {
-        let submenu = NSMenu(title: title)
+        let localizedTitle = L10n.tr(title)
+        let submenu = NSMenu(title: localizedTitle)
         for curve in FadeCurve.allCases {
-            let item = NSMenuItem(title: curve.displayName, action: #selector(setFadeCurveMenu(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.tr(curve.displayName), action: #selector(setFadeCurveMenu(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = FadeCurveMenuPayload(clipID: clipID, edge: edge, curve: curve)
             item.state = selectedCurve == curve ? .on : .off
             submenu.addItem(item)
         }
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: localizedTitle, action: nil, keyEquivalent: "")
         item.submenu = submenu
         return item
     }
@@ -2054,16 +2057,16 @@ final class TimelineView: NSView {
     private func crossfadeCurveMenu(clipID: UUID) -> NSMenuItem {
         let hasCrossfade = project.timeline.crossfades.contains { $0.leadingClipID == clipID || $0.trailingClipID == clipID }
         let selectedCurve = project.timeline.crossfades.first { $0.leadingClipID == clipID || $0.trailingClipID == clipID }?.curve
-        let submenu = NSMenu(title: "Crossfade Curve")
+        let submenu = NSMenu(title: L10n.tr("Crossfade Curve"))
         for curve in CrossfadeCurve.allCases {
-            let item = NSMenuItem(title: curve.displayName, action: #selector(setCrossfadeCurveMenu(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: L10n.tr(curve.displayName), action: #selector(setCrossfadeCurveMenu(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = CrossfadeCurveMenuPayload(clipID: clipID, curve: curve)
             item.state = selectedCurve == curve ? .on : .off
             item.isEnabled = hasCrossfade
             submenu.addItem(item)
         }
-        let item = NSMenuItem(title: "Crossfade Curve", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: L10n.tr("Crossfade Curve"), action: nil, keyEquivalent: "")
         item.submenu = submenu
         item.isEnabled = hasCrossfade
         return item

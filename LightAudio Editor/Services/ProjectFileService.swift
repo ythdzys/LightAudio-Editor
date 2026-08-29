@@ -49,30 +49,30 @@ final class ProjectFileService {
 
     private func validateStructure(of project: inout Project) throws {
         guard project.formatVersion >= Project.minimumSupportedFormatVersion else {
-            throw ProjectFileValidationError("The project uses an obsolete format version (\(project.formatVersion)).")
+            throw ProjectFileValidationError(L10n.format("The project uses an obsolete format version (%d).", project.formatVersion))
         }
         guard project.formatVersion <= Project.currentFormatVersion else {
             throw ProjectFileValidationError(
-                "This project was created by a newer version of LightAudio Editor (format \(project.formatVersion)). Update the app before opening it."
+                L10n.format("This project was created by a newer version of LightAudio Editor (format %d). Update the app before opening it.", project.formatVersion)
             )
         }
         project.formatVersion = Project.currentFormatVersion
 
         guard project.sampleRate.isFinite, project.sampleRate > 0 else {
-            throw ProjectFileValidationError("The project sample rate is invalid.")
+            throw ProjectFileValidationError(L10n.tr("The project sample rate is invalid."))
         }
         guard project.duration.isFinite, project.duration >= 0 else {
-            throw ProjectFileValidationError("The project duration is invalid.")
+            throw ProjectFileValidationError(L10n.tr("The project duration is invalid."))
         }
         guard project.mixState.masterVolumeDB.isFinite else {
-            throw ProjectFileValidationError("The project master volume is invalid.")
+            throw ProjectFileValidationError(L10n.tr("The project master volume is invalid."))
         }
         guard project.viewState.zoom.isFinite,
               project.viewState.horizontalScroll.isFinite,
               project.viewState.trackHeight.isFinite,
               project.viewState.inPoint.map({ $0.isFinite && $0 >= 0 }) ?? true,
               project.viewState.outPoint.map({ $0.isFinite && $0 >= 0 }) ?? true else {
-            throw ProjectFileValidationError("The project timeline view state is invalid.")
+            throw ProjectFileValidationError(L10n.tr("The project timeline view state is invalid."))
         }
         project.viewState.zoom = TimelineViewState.clampedZoom(project.viewState.zoom)
         project.viewState.horizontalScroll = TimelineViewState.clampedHorizontalScroll(project.viewState.horizontalScroll)
@@ -86,7 +86,7 @@ final class ProjectFileService {
 
         let assetIDs = project.assets.map(\.id)
         guard Set(assetIDs).count == assetIDs.count else {
-            throw ProjectFileValidationError("The project contains duplicate media asset identifiers.")
+            throw ProjectFileValidationError(L10n.tr("The project contains duplicate media asset identifiers."))
         }
         for asset in project.assets {
             guard asset.metadata.duration.isFinite,
@@ -94,19 +94,19 @@ final class ProjectFileService {
                   asset.metadata.sampleRate.isFinite,
                   asset.metadata.sampleRate >= 0,
                   asset.metadata.channelCount >= 0 else {
-                throw ProjectFileValidationError("The project contains invalid media metadata.")
+                throw ProjectFileValidationError(L10n.tr("The project contains invalid media metadata."))
             }
         }
 
         let trackIDs = project.timeline.tracks.map(\.id)
         guard Set(trackIDs).count == trackIDs.count else {
-            throw ProjectFileValidationError("The project contains duplicate track identifiers.")
+            throw ProjectFileValidationError(L10n.tr("The project contains duplicate track identifiers."))
         }
 
         let markerIDs = project.timeline.markers.map(\.id)
         guard Set(markerIDs).count == markerIDs.count,
               project.timeline.markers.allSatisfy({ $0.time.isFinite && $0.time >= 0 }) else {
-            throw ProjectFileValidationError("The project contains invalid timeline markers.")
+            throw ProjectFileValidationError(L10n.tr("The project contains invalid timeline markers."))
         }
 
         let assetsByID = Dictionary(uniqueKeysWithValues: project.assets.map { ($0.id, $0) })
@@ -116,22 +116,22 @@ final class ProjectFileService {
             guard track.volumeDB.isFinite,
                   track.pan.isFinite,
                   track.volumeAutomationKeyframes.allSatisfy({ $0.time.isFinite && $0.time >= 0 && $0.gainDB.isFinite }) else {
-                throw ProjectFileValidationError("Track \(trackIndex + 1) has invalid mix or automation data.")
+                throw ProjectFileValidationError(L10n.format("Track %d has invalid mix or automation data.", trackIndex + 1))
             }
             for (clipIndex, clip) in track.clips.enumerated() {
                 guard knownAssetIDs.contains(clip.sourceAssetID) else {
-                    throw ProjectFileValidationError("Track \(trackIndex + 1), clip \(clipIndex + 1) references media that is not present in this project.")
+                    throw ProjectFileValidationError(L10n.format("Track %d, clip %d references media that is not present in this project.", trackIndex + 1, clipIndex + 1))
                 }
                 guard let asset = assetsByID[clip.sourceAssetID],
                       asset.metadata.duration.isFinite,
                       asset.metadata.duration >= 0 else {
-                    throw ProjectFileValidationError("Track \(trackIndex + 1), clip \(clipIndex + 1) references media with invalid duration metadata.")
+                    throw ProjectFileValidationError(L10n.format("Track %d, clip %d references media with invalid duration metadata.", trackIndex + 1, clipIndex + 1))
                 }
                 guard clip.timelineStart.isFinite, clip.timelineStart >= 0,
                       clip.sourceStart.isFinite, clip.sourceStart >= 0,
                       clip.sourceEnd.isFinite, clip.sourceEnd >= clip.sourceStart,
                       clip.sourceEnd <= asset.metadata.duration + 0.001 else {
-                    throw ProjectFileValidationError("Track \(trackIndex + 1), clip \(clipIndex + 1) has invalid timing data.")
+                    throw ProjectFileValidationError(L10n.format("Track %d, clip %d has invalid timing data.", trackIndex + 1, clipIndex + 1))
                 }
                 guard clip.fadeIn.duration.isFinite,
                       clip.fadeOut.duration.isFinite,
@@ -139,16 +139,16 @@ final class ProjectFileService {
                       clip.fadeOut.duration >= 0,
                       clip.fadeIn.duration <= clip.duration + 0.001,
                       clip.fadeOut.duration <= clip.duration + 0.001 else {
-                    throw ProjectFileValidationError("Track \(trackIndex + 1), clip \(clipIndex + 1) has fades outside its visible duration.")
+                    throw ProjectFileValidationError(L10n.format("Track %d, clip %d has fades outside its visible duration.", trackIndex + 1, clipIndex + 1))
                 }
                 guard clip.gain.isFinite,
                       clip.pan.isFinite,
                       clip.volumeAutomationKeyframes.allSatisfy({ $0.time.isFinite && $0.time >= 0 && $0.gainDB.isFinite }),
                       clip.panAutomationKeyframes.allSatisfy({ $0.time.isFinite && $0.time >= 0 && $0.pan.isFinite }) else {
-                    throw ProjectFileValidationError("Track \(trackIndex + 1), clip \(clipIndex + 1) has invalid mix or automation data.")
+                    throw ProjectFileValidationError(L10n.format("Track %d, clip %d has invalid mix or automation data.", trackIndex + 1, clipIndex + 1))
                 }
                 guard clipIDs.insert(clip.id).inserted else {
-                    throw ProjectFileValidationError("The project contains duplicate clip identifiers.")
+                    throw ProjectFileValidationError(L10n.tr("The project contains duplicate clip identifiers."))
                 }
             }
         }
@@ -165,6 +165,6 @@ private struct ProjectFileValidationError: LocalizedError {
     }
 
     var errorDescription: String? {
-        "This .liau project is corrupted: \(message)"
+        L10n.format("This .liau project is corrupted: %@", message)
     }
 }

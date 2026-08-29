@@ -12,7 +12,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
     private let bitratePopup = NSPopUpButton()
     private let outputField = NSTextField()
     private let availabilityLabel = NSTextField(labelWithString: "")
-    private let exportButton = NSButton(title: "Export", target: nil, action: nil)
+    private let exportButton = NSButton(title: L10n.tr("Export"), target: nil, action: nil)
     private var outputURL: URL?
     private var availabilityRequestID = UUID()
     private var formatIsAvailable = false
@@ -29,7 +29,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
         self.project = project
         self.completion = completion
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 330), styleMask: [.titled], backing: .buffered, defer: false)
-        window.title = "Export Audio"
+        window.title = L10n.tr("Export Audio")
         super.init(window: window)
         setup()
         updateForFormat()
@@ -48,22 +48,22 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
         content.addSubview(grid)
 
         ExportFormat.allCases.forEach { formatPopup.addItem(withTitle: $0.rawValue) }
-        rangePopup.addItems(withTitles: ["Entire Project", "In/Out Range"])
+        rangePopup.addItems(withTitles: [L10n.tr("Entire Project"), L10n.tr("In/Out Range")])
         if project.viewState.validRange == nil {
             rangePopup.item(at: 1)?.isEnabled = false
         }
-        sampleRatePopup.addItems(withTitles: ["Project default", "44100", "48000", "96000"])
-        channelsPopup.addItems(withTitles: ["Project default", "Mono", "Stereo"])
+        sampleRatePopup.addItems(withTitles: [L10n.tr("Project default"), "44100", "48000", "96000"])
+        channelsPopup.addItems(withTitles: [L10n.tr("Project default"), L10n.tr("Mono"), L10n.tr("Stereo")])
         bitratePopup.addItems(withTitles: ["128 kbps", "192 kbps", "256 kbps", "320 kbps"])
-        bitratePopup.selectItem(withTitle: "256 kbps")
+        bitratePopup.selectItem(at: 2)
         outputURL = defaultOutputURL(for: .wav)
         outputField.stringValue = outputURL?.path ?? ""
-        outputField.placeholderString = "Output file path"
+        outputField.placeholderString = L10n.tr("Output file path")
         outputField.delegate = self
 
         formatPopup.target = self
         formatPopup.action = #selector(formatChanged)
-        let browse = NSButton(title: "Browse...", target: self, action: #selector(browseOutput))
+        let browse = NSButton(title: L10n.tr("Browse..."), target: self, action: #selector(browseOutput))
 
         addRow(to: grid, label: "Format", view: formatPopup)
         addRow(to: grid, label: "Range", view: rangePopup)
@@ -73,7 +73,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
         addRow(to: grid, label: "Output file", view: outputField, trailing: browse)
         addRow(to: grid, label: "Availability", view: availabilityLabel)
 
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancel))
+        let cancel = NSButton(title: L10n.tr("Cancel"), target: self, action: #selector(cancel))
         exportButton.target = self
         exportButton.action = #selector(export)
         [cancel, exportButton].forEach {
@@ -93,7 +93,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
     }
 
     private func addRow(to grid: NSGridView, label: String, view: NSView, trailing: NSView? = nil) {
-        let labelView = NSTextField(labelWithString: label)
+        let labelView = NSTextField(labelWithString: L10n.tr(label))
         let container = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(view)
@@ -138,7 +138,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
             applyAvailability(ExternalEncoderExportBackend.availability(for: format))
         case .m4a, .mp3, .flac:
             formatIsAvailable = false
-            availabilityLabel.stringValue = "Checking FFmpeg..."
+            availabilityLabel.stringValue = L10n.tr("Checking FFmpeg...")
             availabilityLabel.textColor = .secondaryLabelColor
             updateExportButton()
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -159,8 +159,8 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
         let projectRateSupported = ExportSettings.supports(sampleRate: project.sampleRate, for: format)
         if let projectDefaultItem = sampleRatePopup.item(at: 0) {
             projectDefaultItem.title = projectRateSupported
-                ? "Project default"
-                : "Project default (not available for MP3)"
+                ? L10n.tr("Project default")
+                : L10n.tr("Project default (not available for MP3)")
             projectDefaultItem.isEnabled = projectRateSupported
         }
         sampleRatePopup.item(at: 3)?.isEnabled = format != .mp3
@@ -173,7 +173,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
     private func applyAvailability(_ availability: (available: Bool, reason: String?)) {
         formatIsAvailable = availability.available
         updateExportButton()
-        availabilityLabel.stringValue = availability.reason ?? "Available"
+        availabilityLabel.stringValue = L10n.tr(availability.reason ?? "Available")
         availabilityLabel.textColor = availability.available ? .secondaryLabelColor : .systemRed
     }
 
@@ -248,10 +248,10 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
         guard let window = window else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Replace existing export?"
-        alert.informativeText = "\(outputURL.lastPathComponent) already exists. Replacing it cannot be undone."
-        alert.addButton(withTitle: "Replace")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.tr("Replace existing export?")
+        alert.informativeText = L10n.format("%@ already exists. Replacing it cannot be undone.", outputURL.lastPathComponent)
+        alert.addButton(withTitle: L10n.tr("Replace"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             self?.finishExport(to: outputURL, overwritingExisting: true)

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.2"><strong>Download Beta 2</strong></a>
+  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.3"><strong>Download Beta 3</strong></a>
   &nbsp;|&nbsp;
   <a href="https://github.com/ythdzys/LightAudio-Editor/issues/new/choose">Report an issue</a>
   &nbsp;|&nbsp;
@@ -32,8 +32,8 @@ LightAudio Editor provides a timeline-oriented workflow for importing, arranging
 
 ## Download and Install
 
-1. Open the [Beta 2 release](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.2).
-2. Download `LightAudio-Editor-0.1.1-beta-2-ADHOC-UNNOTARIZED.zip`.
+1. Open the [Beta 3 release](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.3).
+2. Download `LightAudio-Editor-0.1.1-beta-3-ADHOC-UNNOTARIZED.zip`.
 3. Extract the ZIP and move **LightAudio Editor.app** to `/Applications`.
 4. Try to open the app once. If macOS blocks it, approve it under:
    - macOS Ventura and later: **System Settings > Privacy & Security > Open Anyway**
@@ -59,6 +59,7 @@ Both architectures ship in one Universal app. Apple silicon begins with macOS Bi
 - Import MP3, WAV, M4A, AAC, FLAC, AIFF/AIF, and CAF audio
 - Import MP4, MOV, M4V, MKV, and AVI as audio-only media when AVFoundation can decode the source
 - Finder drag and drop, folder import, duplicate detection, search, filtering, sorting, renaming, and media information
+- English and Simplified Chinese interface options in **LightAudio Editor > Preferences**
 - Asynchronous high-density waveform analysis with persistent versioned caches
 - Reusable audio proxies for video-origin media
 - Missing-media detection, individual relinking, and folder-based relinking
@@ -121,6 +122,8 @@ Generated caches are stored under:
 
 **LightAudio Editor > Preferences > Clear App Cache** removes generated waveforms, proxy audio, and recovery snapshots. It does not remove `.liau` projects or original media.
 
+The interface follows the macOS language by default. Choose **English** or **Simplified Chinese** under **LightAudio Editor > Preferences > Language** to override it; the selected language is applied after restarting the app.
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
@@ -171,7 +174,7 @@ xcodebuild \
   test
 ```
 
-The current suite contains 59 tests covering project validation, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, and real bundled M4A/MP3/FLAC exports.
+The current suite contains 61 tests covering project validation, localization, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, and real bundled M4A/MP3/FLAC exports.
 
 ## Repository Layout
 

@@ -62,7 +62,7 @@ final class ExportCancellationToken {
 }
 
 private func exportCancellationError() -> NSError {
-    NSError(domain: "LightAudio", code: 11, userInfo: [NSLocalizedDescriptionKey: "Export cancelled."])
+    NSError(domain: "LightAudio", code: 11, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Export cancelled.")])
 }
 
 /// Source media and generated caches are inputs, never export destinations. Keep this guard in
@@ -87,7 +87,7 @@ private func validateExportDestination(_ destinationURL: URL, for project: Proje
         throw NSError(
             domain: "LightAudioExport",
             code: 41,
-            userInfo: [NSLocalizedDescriptionKey: "The export destination is an imported media file or generated audio proxy. Choose a different output file to keep project media non-destructive."]
+            userInfo: [NSLocalizedDescriptionKey: L10n.tr("The export destination is an imported media file or generated audio proxy. Choose a different output file to keep project media non-destructive.")]
         )
     }
 }
@@ -117,7 +117,7 @@ private struct ExportOutputTransaction {
                 throw NSError(
                     domain: "LightAudioExport",
                     code: 40,
-                    userInfo: [NSLocalizedDescriptionKey: "An output file already exists at this location. Choose a different name or confirm replacement."]
+                    userInfo: [NSLocalizedDescriptionKey: L10n.tr("An output file already exists at this location. Choose a different name or confirm replacement.")]
                 )
             }
             _ = try manager.replaceItemAt(destinationURL, withItemAt: stagingURL, backupItemName: nil, options: [])
@@ -144,13 +144,13 @@ final class NativeAudioExportBackend: AudioExportBackend {
         try validateExportDestination(settings.outputURL, for: project)
         let sourceCache = SourceCache()
         guard settings.format == .wav || settings.format == .aiff else {
-            throw NSError(domain: "LightAudio", code: 10, userInfo: [NSLocalizedDescriptionKey: "This MVP exports WAV or AIFF with the native backend."])
+            throw NSError(domain: "LightAudio", code: 10, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This MVP exports WAV or AIFF with the native backend.")])
         }
 
         let sampleRate = settings.sampleRate
         let channels = AVAudioChannelCount(max(1, min(2, settings.channelCount)))
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: channels, interleaved: false) else {
-            throw NSError(domain: "LightAudioExport", code: 51, userInfo: [NSLocalizedDescriptionKey: "Could not create the requested output audio format."])
+            throw NSError(domain: "LightAudioExport", code: 51, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Could not create the requested output audio format.")])
         }
         let range = renderRange(for: project, settings: settings)
         let outputTransaction = ExportOutputTransaction(destinationURL: settings.outputURL)
@@ -160,7 +160,7 @@ final class NativeAudioExportBackend: AudioExportBackend {
         guard requestedFrameCount.isFinite,
               requestedFrameCount >= 0,
               requestedFrameCount <= Double(Int64.max) else {
-            throw NSError(domain: "LightAudioExport", code: 52, userInfo: [NSLocalizedDescriptionKey: "The requested export duration is too large."])
+            throw NSError(domain: "LightAudioExport", code: 52, userInfo: [NSLocalizedDescriptionKey: L10n.tr("The requested export duration is too large.")])
         }
         let totalFrames = AVAudioFramePosition(requestedFrameCount.rounded(.down))
         let chunkFrames: AVAudioFrameCount = 4096
@@ -305,14 +305,14 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
     private static func availability(for format: ExportFormat, encoderPath: String?) -> (available: Bool, reason: String?) {
         switch format {
         case .wav, .aiff:
-            return (true, "Available (Native)")
+            return (true, L10n.tr("Available (Native)"))
         case .m4a, .mp3, .flac:
             guard let ffmpegPath = encoderPath,
                   FileManager.default.isExecutableFile(atPath: ffmpegPath) else {
-                return (false, "The bundled encoder is unavailable. Reinstall LightAudio Editor and try again.")
+                return (false, L10n.tr("The bundled encoder is unavailable. Reinstall LightAudio Editor and try again."))
             }
             guard let encoders = ExternalEncoderSettings.audioEncoderNames(path: ffmpegPath) else {
-                return (false, "Could not read supported audio encoders from \(ExternalEncoderSettings.sourceDescription(for: ffmpegPath)).")
+                return (false, L10n.format("Could not read supported audio encoders from %@.", L10n.tr(ExternalEncoderSettings.sourceDescription(for: ffmpegPath))))
             }
             let requiredEncoder: String
             switch format {
@@ -322,9 +322,9 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
             case .wav, .aiff: requiredEncoder = ""
             }
             guard encoders.contains(requiredEncoder) else {
-                return (false, "\(ExternalEncoderSettings.sourceDescription(for: ffmpegPath)) does not include the \(requiredEncoder) audio encoder required for \(format.rawValue) export.")
+                return (false, L10n.format("%@ does not include the %@ audio encoder required for %@ export.", L10n.tr(ExternalEncoderSettings.sourceDescription(for: ffmpegPath)), requiredEncoder, format.rawValue))
             }
-            return (true, "Available (\(ExternalEncoderSettings.sourceDescription(for: ffmpegPath)))")
+            return (true, L10n.format("Available (%@)", L10n.tr(ExternalEncoderSettings.sourceDescription(for: ffmpegPath))))
         }
     }
 
@@ -336,7 +336,7 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
         let availability = Self.availability(for: settings.format, encoderPath: ffmpegPath)
         guard availability.available,
               let ffmpegPath else {
-            throw NSError(domain: "LightAudio", code: 30, userInfo: [NSLocalizedDescriptionKey: availability.reason ?? "The bundled encoder is unavailable. Reinstall LightAudio Editor and try again."])
+            throw NSError(domain: "LightAudio", code: 30, userInfo: [NSLocalizedDescriptionKey: availability.reason ?? L10n.tr("The bundled encoder is unavailable. Reinstall LightAudio Editor and try again.")])
         }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-\(UUID().uuidString).wav")
@@ -470,12 +470,12 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
             throw NSError(
                 domain: "LightAudioFFmpeg",
                 code: 31,
-                userInfo: [NSLocalizedDescriptionKey: "Audio encoding timed out. Check the FFmpeg setting in Preferences and try again."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.tr("Audio encoding timed out. Check the FFmpeg setting in Preferences and try again.")]
             )
         }
         guard process.terminationStatus == 0 else {
             errorLock.lock()
-            let message = String(data: errorData, encoding: .utf8) ?? "External encoder failed."
+            let message = String(data: errorData, encoding: .utf8) ?? L10n.tr("External encoder failed.")
             errorLock.unlock()
             throw NSError(domain: "LightAudioFFmpeg", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: message])
         }
@@ -575,13 +575,13 @@ final class ExportService {
         }
         guard unavailableSources.isEmpty else {
             let names = unavailableSources.map { $0.metadata.fileName }.sorted().joined(separator: "\n")
-            throw NSError(domain: "LightAudio", code: 12, userInfo: [NSLocalizedDescriptionKey: "Relink missing media before exporting:\n\(names)"])
+            throw NSError(domain: "LightAudio", code: 12, userInfo: [NSLocalizedDescriptionKey: L10n.format("Relink missing media before exporting:\n%@", names)])
         }
 
         let unavailableProxies = TimelineRenderService().unavailableVideoProxyAssets(in: project)
         guard unavailableProxies.isEmpty else {
             let names = unavailableProxies.map { $0.metadata.fileName }.sorted().joined(separator: "\n")
-            throw NSError(domain: "LightAudio", code: 13, userInfo: [NSLocalizedDescriptionKey: "Finish generating or relink unavailable audio proxies before exporting:\n\(names)"])
+            throw NSError(domain: "LightAudio", code: 13, userInfo: [NSLocalizedDescriptionKey: L10n.format("Finish generating or relink unavailable audio proxies before exporting:\n%@", names)])
         }
 
         let assetIDs = Set(project.assets.map(\.id))
@@ -589,7 +589,7 @@ final class ExportService {
             track.clips.contains { !assetIDs.contains($0.sourceAssetID) }
         }
         guard !hasUnresolvedClip else {
-            throw NSError(domain: "LightAudio", code: 14, userInfo: [NSLocalizedDescriptionKey: "This project contains clips with unresolved media references."])
+            throw NSError(domain: "LightAudio", code: 14, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This project contains clips with unresolved media references.")])
         }
     }
 }

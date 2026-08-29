@@ -108,7 +108,7 @@ final class AudioPlaybackEngine {
             channels: 2,
             interleaved: false
         ) else {
-            completion(.failure(NSError(domain: "LightAudio", code: 60, userInfo: [NSLocalizedDescriptionKey: "Could not create the playback audio format."])))
+            completion(.failure(NSError(domain: "LightAudio", code: 60, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Could not create the playback audio format.")])))
             return
         }
 
@@ -122,7 +122,7 @@ final class AudioPlaybackEngine {
                       !asset.isMissing,
                       let url = asset.audioSourceURL,
                       FileManager.default.fileExists(atPath: url.path) else {
-                    let name = project.asset(id: clip.sourceAssetID)?.metadata.fileName ?? "Unknown media"
+                    let name = project.asset(id: clip.sourceAssetID)?.metadata.fileName ?? L10n.tr("Unknown media")
                     unavailableAssetNames.insert(name)
                     continue
                 }
@@ -131,7 +131,7 @@ final class AudioPlaybackEngine {
         }
         guard unavailableAssetNames.isEmpty else {
             let names = unavailableAssetNames.sorted().joined(separator: "\n")
-            completion(.failure(NSError(domain: "LightAudio", code: 61, userInfo: [NSLocalizedDescriptionKey: "Relink unavailable media before playback:\n\(names)"])))
+            completion(.failure(NSError(domain: "LightAudio", code: 61, userInfo: [NSLocalizedDescriptionKey: L10n.format("Relink unavailable media before playback:\n%@", names)])))
             return
         }
 

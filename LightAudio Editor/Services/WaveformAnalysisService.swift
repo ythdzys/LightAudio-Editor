@@ -73,11 +73,11 @@ final class WaveformAnalysisService {
         var framesInPeak = 0
 
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrameCount) else {
-            throw waveformError("Could not allocate waveform buffer.")
+            throw waveformError(L10n.tr("Could not allocate waveform buffer."))
         }
         let channelCount = Int(format.channelCount)
         guard channelCount > 0 else {
-            throw waveformError("This audio file has no readable channels.")
+            throw waveformError(L10n.tr("This audio file has no readable channels."))
         }
 
         while file.framePosition < file.length {
@@ -85,7 +85,7 @@ final class WaveformAnalysisService {
             let framesRead = Int(buffer.frameLength)
             guard framesRead > 0 else { break }
             guard let channels = buffer.floatChannelData else {
-                throw waveformError("Unsupported audio sample format.")
+                throw waveformError(L10n.tr("Unsupported audio sample format."))
             }
             for frame in 0..<framesRead {
                 var frameMin = Float.greatestFiniteMagnitude

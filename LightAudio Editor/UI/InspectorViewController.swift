@@ -22,22 +22,22 @@ final class InspectorViewController: NSViewController {
     }
 
     private let rowsStack = NSStackView()
-    private let summarySection = InspectorSectionView(title: "Selection Summary")
-    private let identitySection = InspectorSectionView(title: "Identity")
-    private let levelPanSection = InspectorSectionView(title: "Level & Pan")
-    private let fadesSection = InspectorSectionView(title: "Fades")
-    private let automationSection = InspectorSectionView(title: "Automation")
-    private let processingSection = InspectorSectionView(title: "Processing")
+    private let summarySection = InspectorSectionView(title: L10n.tr("Selection Summary"))
+    private let identitySection = InspectorSectionView(title: L10n.tr("Identity"))
+    private let levelPanSection = InspectorSectionView(title: L10n.tr("Level & Pan"))
+    private let fadesSection = InspectorSectionView(title: L10n.tr("Fades"))
+    private let automationSection = InspectorSectionView(title: L10n.tr("Automation"))
+    private let processingSection = InspectorSectionView(title: L10n.tr("Processing"))
     private let automationButtons = NSStackView()
 
-    private let titleLabel = NSTextField(labelWithString: "No clip selected")
-    private let summaryDetailLabel = NSTextField(labelWithString: "Select a clip to edit its settings.")
+    private let titleLabel = NSTextField(labelWithString: L10n.tr("No clip selected"))
+    private let summaryDetailLabel = NSTextField(labelWithString: L10n.tr("Select a clip to edit its settings."))
     private let nameField = NSTextField(string: "")
     private let colorPopup = NSPopUpButton()
-    private let automationSummaryLabel = NSTextField(labelWithString: "Volume keyframes: 0")
-    private let addKeyframeButton = NSButton(title: "Add keyframe", target: nil, action: nil)
-    private let clearAutomationButton = NSButton(title: "Clear automation", target: nil, action: nil)
-    private let normalizeButton = NSButton(title: "Normalize Clip...", target: nil, action: nil)
+    private let automationSummaryLabel = NSTextField(labelWithString: L10n.tr("Volume keyframes: 0"))
+    private let addKeyframeButton = NSButton(title: L10n.tr("Add keyframe"), target: nil, action: nil)
+    private let clearAutomationButton = NSButton(title: L10n.tr("Clear automation"), target: nil, action: nil)
+    private let normalizeButton = NSButton(title: L10n.tr("Normalize Clip..."), target: nil, action: nil)
     private let gainSlider = ContinuousSlider(value: 0, minValue: -60, maxValue: 12, target: nil, action: nil)
     private let panSlider = ContinuousSlider(value: 0, minValue: -100, maxValue: 100, target: nil, action: nil)
     private let fadeInSlider = ContinuousSlider(value: 0, minValue: 0, maxValue: 10, target: nil, action: nil)
@@ -110,17 +110,17 @@ final class InspectorViewController: NSViewController {
         fadeInSlider.action = #selector(fadeInChanged)
         fadeOutSlider.target = self
         fadeOutSlider.action = #selector(fadeOutChanged)
-        gainSlider.onBeginContinuousChange = { [weak self] in self?.onBeginContinuousEdit?("Clip Gain") }
-        panSlider.onBeginContinuousChange = { [weak self] in self?.onBeginContinuousEdit?("Clip Pan") }
-        fadeInSlider.onBeginContinuousChange = { [weak self] in self?.onBeginContinuousEdit?("Fade In") }
-        fadeOutSlider.onBeginContinuousChange = { [weak self] in self?.onBeginContinuousEdit?("Fade Out") }
+        gainSlider.onBeginContinuousChange = { [weak self] in self?.onBeginContinuousEdit?(L10n.tr("Clip Gain")) }
+        panSlider.onBeginContinuousChange = { [weak self] in self?.onBeginContinuousEdit?(L10n.tr("Clip Pan")) }
+        fadeInSlider.onBeginContinuousChange = { [weak self] in self?.onBeginContinuousEdit?(L10n.tr("Fade In")) }
+        fadeOutSlider.onBeginContinuousChange = { [weak self] in self?.onBeginContinuousEdit?(L10n.tr("Fade Out")) }
         [gainSlider, panSlider, fadeInSlider, fadeOutSlider].forEach { slider in
             slider.onEndContinuousChange = { [weak self] in self?.onEndContinuousEdit?() }
         }
 
         FadeCurve.allCases.forEach {
-            fadeInCurvePopup.addItem(withTitle: $0.displayName)
-            fadeOutCurvePopup.addItem(withTitle: $0.displayName)
+            fadeInCurvePopup.addItem(withTitle: L10n.tr($0.displayName))
+            fadeOutCurvePopup.addItem(withTitle: L10n.tr($0.displayName))
         }
         fadeInCurvePopup.target = self
         fadeInCurvePopup.action = #selector(fadeInCurveChanged)
@@ -134,11 +134,11 @@ final class InspectorViewController: NSViewController {
 
         nameField.target = self
         nameField.action = #selector(nameFieldChanged)
-        nameField.placeholderString = "Clip name"
+        nameField.placeholderString = L10n.tr("Clip name")
         nameField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         nameField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        ClipColorLabel.allCases.forEach { colorPopup.addItem(withTitle: $0.displayName) }
+        ClipColorLabel.allCases.forEach { colorPopup.addItem(withTitle: L10n.tr($0.displayName)) }
         colorPopup.target = self
         colorPopup.action = #selector(colorChanged)
 
@@ -305,7 +305,7 @@ final class InspectorViewController: NSViewController {
     }
 
     private func rowLabel(_ title: String) -> NSTextField {
-        let label = NSTextField(labelWithString: title)
+        let label = NSTextField(labelWithString: L10n.tr(title))
         label.widthAnchor.constraint(equalToConstant: 64).isActive = true
         label.font = .systemFont(ofSize: 11)
         label.textColor = .secondaryLabelColor
@@ -325,9 +325,9 @@ final class InspectorViewController: NSViewController {
         let editingIsBlocked = project.hasMissingAssets
         guard !selectedClipIDs.isEmpty else {
             selectionMode = .none
-            titleLabel.stringValue = editingIsBlocked ? "Editing unavailable" : "No clip selected"
-            summaryDetailLabel.stringValue = editingIsBlocked ? "Relink missing media before editing." : "Select a clip to edit its settings."
-            automationSummaryLabel.stringValue = "Volume keyframes: 0"
+            titleLabel.stringValue = L10n.tr(editingIsBlocked ? "Editing unavailable" : "No clip selected")
+            summaryDetailLabel.stringValue = L10n.tr(editingIsBlocked ? "Relink missing media before editing." : "Select a clip to edit its settings.")
+            automationSummaryLabel.stringValue = L10n.tr("Volume keyframes: 0")
             setControlsEnabled(false)
             setAutomationButtonsEnabled(false)
             markSectionsForRebuild()
@@ -335,9 +335,9 @@ final class InspectorViewController: NSViewController {
         }
         if selectedClipIDs.count > 1 {
             selectionMode = .multiple
-            titleLabel.stringValue = "\(selectedClipIDs.count) clips selected"
-            summaryDetailLabel.stringValue = editingIsBlocked ? "Relink missing media before editing." : "Batch editing is available for level, pan, and fades."
-            automationSummaryLabel.stringValue = "Volume automation: select one clip"
+            titleLabel.stringValue = L10n.format("%d clips selected", selectedClipIDs.count)
+            summaryDetailLabel.stringValue = L10n.tr(editingIsBlocked ? "Relink missing media before editing." : "Batch editing is available for level, pan, and fades.")
+            automationSummaryLabel.stringValue = L10n.tr("Volume automation: select one clip")
             isUpdatingControls = true
             nameField.stringValue = ""
             colorPopup.selectItem(at: 0)
@@ -362,11 +362,11 @@ final class InspectorViewController: NSViewController {
             if let clip = track.clips.first(where: { $0.id == id }) {
                 selectionMode = .single
                 isUpdatingControls = true
-                titleLabel.stringValue = "Selected Clip"
-                summaryDetailLabel.stringValue = editingIsBlocked ? "Relink missing media before editing." : "Editing one timeline clip."
+                titleLabel.stringValue = L10n.tr("Selected Clip")
+                summaryDetailLabel.stringValue = L10n.tr(editingIsBlocked ? "Relink missing media before editing." : "Editing one timeline clip.")
                 nameField.stringValue = clip.customName ?? ""
                 colorPopup.selectItem(at: ClipColorLabel.allCases.firstIndex(of: clip.colorLabel) ?? 0)
-                automationSummaryLabel.stringValue = "Volume keyframes: \(clip.volumeAutomationKeyframes.count)"
+                automationSummaryLabel.stringValue = L10n.format("Volume keyframes: %d", clip.volumeAutomationKeyframes.count)
                 gainSlider.doubleValue = MixMath.db(forLinearGain: clip.gain)
                 panSlider.doubleValue = clip.pan * 100
                 fadeInSlider.maxValue = max(0.1, min(10, clip.duration))
@@ -387,8 +387,8 @@ final class InspectorViewController: NSViewController {
             }
         }
         selectionMode = .none
-        titleLabel.stringValue = editingIsBlocked ? "Editing unavailable" : "No clip selected"
-        summaryDetailLabel.stringValue = editingIsBlocked ? "Relink missing media before editing." : "Select a clip to edit its settings."
+        titleLabel.stringValue = L10n.tr(editingIsBlocked ? "Editing unavailable" : "No clip selected")
+        summaryDetailLabel.stringValue = L10n.tr(editingIsBlocked ? "Relink missing media before editing." : "Select a clip to edit its settings.")
         setControlsEnabled(false)
         setAutomationButtonsEnabled(false)
         markSectionsForRebuild()

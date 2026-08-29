@@ -123,27 +123,27 @@ struct ExportSettings: Codable {
 
     func validate() throws {
         guard sampleRate.isFinite, sampleRate >= 8_000, sampleRate <= 384_000 else {
-            throw ExportSettingsValidationError("Choose a valid output sample rate.")
+            throw ExportSettingsValidationError(L10n.tr("Choose a valid output sample rate."))
         }
         guard Self.supports(sampleRate: sampleRate, for: format) else {
-            throw ExportSettingsValidationError("MP3 export supports 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, or 48000 Hz. Choose a compatible sample rate.")
+            throw ExportSettingsValidationError(L10n.tr("MP3 export supports 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, or 48000 Hz. Choose a compatible sample rate."))
         }
         guard (1...2).contains(channelCount) else {
-            throw ExportSettingsValidationError("Choose mono or stereo output.")
+            throw ExportSettingsValidationError(L10n.tr("Choose mono or stereo output."))
         }
         guard outputURL.isFileURL,
               !outputURL.path.isEmpty,
               !outputURL.hasDirectoryPath else {
-            throw ExportSettingsValidationError("Choose a valid output file.")
+            throw ExportSettingsValidationError(L10n.tr("Choose a valid output file."))
         }
         if let bitrate {
             guard (8...512).contains(bitrate) else {
-                throw ExportSettingsValidationError("Choose a valid audio bitrate.")
+                throw ExportSettingsValidationError(L10n.tr("Choose a valid audio bitrate."))
             }
         }
         if case .timeRange(let start, let end) = range {
             guard start.isFinite, end.isFinite, start >= 0, end > start else {
-                throw ExportSettingsValidationError("The selected export range is invalid.")
+                throw ExportSettingsValidationError(L10n.tr("The selected export range is invalid."))
             }
         }
     }

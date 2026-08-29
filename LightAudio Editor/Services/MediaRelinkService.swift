@@ -22,26 +22,26 @@ final class MediaRelinkService {
     func verifyAndRelink(asset: MediaAsset, replacementURL: URL, projectURL: URL?) -> RelinkResult {
         do {
             if asset.kind == .videoAudio && !AudioFormatHelpers.isVideoExtension(replacementURL.pathExtension) {
-                return RelinkResult(accepted: false, reason: "Choose a video file with a matching audio track for this video-origin asset.", updatedAsset: nil)
+                return RelinkResult(accepted: false, reason: L10n.tr("Choose a video file with a matching audio track for this video-origin asset."), updatedAsset: nil)
             }
             if asset.kind == .audio && AudioFormatHelpers.isVideoExtension(replacementURL.pathExtension) {
-                return RelinkResult(accepted: false, reason: "Choose an audio file for this audio asset.", updatedAsset: nil)
+                return RelinkResult(accepted: false, reason: L10n.tr("Choose an audio file for this audio asset."), updatedAsset: nil)
             }
             let replacement = try importService.metadata(for: replacementURL)
             let durationDelta = abs(replacement.duration - asset.metadata.duration)
             guard durationDelta <= 0.25 else {
-                return RelinkResult(accepted: false, reason: "Duration does not match closely enough.", updatedAsset: nil)
+                return RelinkResult(accepted: false, reason: L10n.tr("Duration does not match closely enough."), updatedAsset: nil)
             }
 
             var warnings: [String] = []
-            if replacement.sampleRate != asset.metadata.sampleRate { warnings.append("sample rate differs") }
-            if replacement.channelCount != asset.metadata.channelCount { warnings.append("channel count differs") }
-            if replacement.fileSize != asset.metadata.fileSize { warnings.append("file size differs") }
-            if replacement.fileName != asset.metadata.fileName { warnings.append("file name differs") }
+            if replacement.sampleRate != asset.metadata.sampleRate { warnings.append(L10n.tr("sample rate differs")) }
+            if replacement.channelCount != asset.metadata.channelCount { warnings.append(L10n.tr("channel count differs")) }
+            if replacement.fileSize != asset.metadata.fileSize { warnings.append(L10n.tr("file size differs")) }
+            if replacement.fileName != asset.metadata.fileName { warnings.append(L10n.tr("file name differs")) }
             if let expectedChecksum = asset.metadata.checksum,
                let replacementChecksum = replacement.checksum,
                expectedChecksum != replacementChecksum {
-                warnings.append("audio checksum differs")
+                warnings.append(L10n.tr("audio checksum differs"))
             }
 
             var updated = asset
@@ -56,8 +56,8 @@ final class MediaRelinkService {
             updated.isMissing = false
             updated.waveformCacheKey = nil
             let suffix = warnings.isEmpty
-                ? "Relinked."
-                : "Candidate needs confirmation: \(warnings.joined(separator: ", "))."
+                ? L10n.tr("Relinked.")
+                : L10n.format("Candidate needs confirmation: %@.", warnings.joined(separator: L10n.tr(", ")))
             return RelinkResult(accepted: true, reason: suffix, updatedAsset: updated, warnings: warnings)
         } catch {
             return RelinkResult(accepted: false, reason: error.localizedDescription, updatedAsset: nil)

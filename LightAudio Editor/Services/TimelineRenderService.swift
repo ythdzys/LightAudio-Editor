@@ -251,7 +251,7 @@ final class TimelineAudioSource {
             throw NSError(
                 domain: "LightAudioRender",
                 code: 70,
-                userInfo: [NSLocalizedDescriptionKey: "Could not create the requested audio conversion format."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.tr("Could not create the requested audio conversion format.")]
             )
         }
 
@@ -268,7 +268,7 @@ final class TimelineAudioSource {
                 throw NSError(
                     domain: "LightAudioRender",
                     code: 70,
-                    userInfo: [NSLocalizedDescriptionKey: "Could not create an audio sample-rate converter."]
+                    userInfo: [NSLocalizedDescriptionKey: L10n.tr("Could not create an audio sample-rate converter.")]
                 )
             }
             let inputCapacity = AVAudioFrameCount(min(16_384, max(1, sourceEndFrame - sourceStartFrame)))
@@ -325,7 +325,7 @@ final class TimelineAudioSource {
             throw NSError(
                 domain: "LightAudioRender",
                 code: 71,
-                userInfo: [NSLocalizedDescriptionKey: "Audio sample-rate conversion failed."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.tr("Audio sample-rate conversion failed.")]
             )
         }
         state.nextSourceTime = sourceStartTime + Double(outputBuffer.frameLength) / outputSampleRate

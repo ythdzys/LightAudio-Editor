@@ -9,7 +9,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     private let timelineView = TimelineView()
     private let inspector = InspectorViewController()
     private let timeLabel = NSTextField(string: "00:00:00.000")
-    private let statusLabel = NSTextField(labelWithString: "Ready")
+    private let statusLabel = NSTextField(labelWithString: L10n.tr("Ready"))
     private let masterVolumeSlider = ContinuousSlider(value: 0, minValue: -60, maxValue: 6, target: nil, action: nil)
     private let masterVolumeLabel = NSTextField(labelWithString: "0 dB")
     private let masterMeterView = LevelMeterView()
@@ -33,7 +33,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     init(projectController: ProjectController) {
         self.projectController = projectController
         let window = KeyWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "LightAudio Editor"
+        window.title = L10n.tr("LightAudio Editor")
         window.minSize = NSSize(width: 920, height: 560)
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -71,7 +71,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard !ExternalEncoderSettings.bundledEncoderSupportsRequiredFormats() else { return }
             DispatchQueue.main.async {
-                self?.showStatus("Bundled encoder unavailable; reinstall the app to enable M4A, MP3, and FLAC export")
+                self?.showStatus(L10n.tr("Bundled encoder unavailable; reinstall the app to enable M4A, MP3, and FLAC export"))
             }
         }
     }
@@ -107,17 +107,17 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         mediaBin.onRegenerateWaveform = { [weak self] id in
             self?.regeneratingWaveformIDs.insert(id)
             self?.projectController.regenerateWaveform(assetID: id)
-            self?.showStatus("Regenerating waveform...")
+            self?.showStatus(L10n.tr("Regenerating waveform..."))
         }
         mediaBin.onRegenerateProxy = { [weak self] id in
             self?.regeneratingProxyIDs.insert(id)
             self?.regeneratingWaveformIDs.insert(id)
             self?.projectController.regenerateAudioProxy(assetID: id)
-            self?.showStatus("Regenerating audio proxy...")
+            self?.showStatus(L10n.tr("Regenerating audio proxy..."))
         }
         mediaBin.onCancelProxyGeneration = { [weak self] id in
             self?.projectController.cancelAudioProxyGeneration(assetID: id)
-            self?.showStatus("Audio proxy generation cancelled")
+            self?.showStatus(L10n.tr("Audio proxy generation cancelled"))
         }
         mediaBin.onRemoveAsset = { [weak self] id in
             guard let self = self else { return }
@@ -125,11 +125,11 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 track.clips.contains { $0.sourceAssetID == id }
             }
             if isUsed {
-                self.showStatus("Cannot remove media that is used by timeline clips")
+                self.showStatus(L10n.tr("Cannot remove media that is used by timeline clips"))
             }
             self.projectController.removeAssetIfUnused(assetID: id)
             if !isUsed {
-                self.showStatus("Removed unused media")
+                self.showStatus(L10n.tr("Removed unused media"))
             }
         }
         mediaBin.onShowInfo = { [weak self] id in self?.showMediaInfo(assetID: id) }
@@ -140,21 +140,21 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         inspector.onFadeOutChanged = { [weak self] duration in self?.projectController.setClipFadeOut(duration) }
         inspector.onFadeInCurveChanged = { [weak self] curve in
             self?.projectController.setClipFadeCurve(edge: .left, curve: curve)
-            self?.showStatus("Fade in curve: \(curve.displayName)")
+            self?.showStatus(L10n.format("Fade in curve: %@", L10n.tr(curve.displayName)))
         }
         inspector.onFadeOutCurveChanged = { [weak self] curve in
             self?.projectController.setClipFadeCurve(edge: .right, curve: curve)
-            self?.showStatus("Fade out curve: \(curve.displayName)")
+            self?.showStatus(L10n.format("Fade out curve: %@", L10n.tr(curve.displayName)))
         }
         inspector.onNameChanged = { [weak self] name in self?.projectController.renameSelectedClip(name) }
         inspector.onColorChanged = { [weak self] color in self?.projectController.setSelectedClipColor(color) }
         inspector.onAddVolumeKeyframe = { [weak self] in
             self?.projectController.addVolumeKeyframeToSelectedClip()
-            self?.showStatus("Added volume keyframe")
+            self?.showStatus(L10n.tr("Added volume keyframe"))
         }
         inspector.onClearVolumeAutomation = { [weak self] in
             self?.projectController.clearSelectedClipVolumeAutomation()
-            self?.showStatus("Cleared volume automation")
+            self?.showStatus(L10n.tr("Cleared volume automation"))
         }
         inspector.onNormalizeClip = { [weak self] in
             guard let id = self?.projectController.selectedClipID else { return }
@@ -173,7 +173,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         timelineView.onTrimClip = { [weak self] id, edge, time in self?.projectController.trimClip(id, edge: edge, to: time) }
         timelineView.onSetClipFade = { [weak self] id, edge, duration in
             self?.projectController.setClipFade(clipID: id, edge: edge, duration: duration)
-            self?.showStatus("\(edge == .left ? "Fade in" : "Fade out"): \(String(format: "%.2fs", duration))")
+            self?.showStatus(L10n.format("%@: %.2fs", L10n.tr(edge == .left ? "Fade in" : "Fade out"), duration))
         }
         timelineView.onSplitClip = { [weak self] id, time in self?.projectController.splitClip(id, at: time) }
         timelineView.onSetPlayhead = { [weak self] time in
@@ -184,36 +184,36 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         timelineView.onToggleTrackLock = { [weak self] id in self?.projectController.toggleLock(trackID: id) }
         timelineView.onSetTrackVolume = { [weak self] id, volumeDB in
             self?.projectController.setTrackVolume(trackID: id, volumeDB: volumeDB)
-            self?.showStatus("Track volume changed")
+            self?.showStatus(L10n.tr("Track volume changed"))
         }
         timelineView.onSetTrackPan = { [weak self] id, pan in
             self?.projectController.setTrackPan(trackID: id, pan: pan)
-            self?.showStatus("Track pan changed")
+            self?.showStatus(L10n.tr("Track pan changed"))
         }
         timelineView.onRenameTrack = { [weak self] id in self?.renameTrack(trackID: id) }
         timelineView.onAddTrack = { [weak self] in self?.projectController.addTrack() }
         timelineView.onAddTrackAbove = { [weak self] id in
             self?.projectController.addTrack(above: id)
-            self?.showStatus("Added track above")
+            self?.showStatus(L10n.tr("Added track above"))
         }
         timelineView.onAddTrackBelow = { [weak self] id in
             self?.projectController.addTrack(below: id)
-            self?.showStatus("Added track below")
+            self?.showStatus(L10n.tr("Added track below"))
         }
         timelineView.onDuplicateTrack = { [weak self] id in
             self?.projectController.duplicateTrack(id)
-            self?.showStatus("Duplicated track")
+            self?.showStatus(L10n.tr("Duplicated track"))
         }
         timelineView.onToggleTrackCollapse = { [weak self] id in
             self?.projectController.toggleTrackCollapsed(trackID: id)
         }
         timelineView.onResetTrackHeight = { [weak self] in
             self?.projectController.resetTrackHeight()
-            self?.showStatus("Track height reset")
+            self?.showStatus(L10n.tr("Track height reset"))
         }
         timelineView.onReorderTrack = { [weak self] id, index in
             self?.projectController.moveTrack(id, to: index)
-            self?.showStatus("Track reordered")
+            self?.showStatus(L10n.tr("Track reordered"))
         }
         timelineView.onDropAsset = { [weak self] id, time, trackIndex in
             guard let self = self,
@@ -229,46 +229,46 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         timelineView.onRenameClip = { [weak self] id in self?.renameClip(clipID: id) }
         timelineView.onSetClipColor = { [weak self] id, color in
             self?.projectController.setClipColor(id, color: color)
-            self?.showStatus("Clip color changed")
+            self?.showStatus(L10n.tr("Clip color changed"))
         }
         timelineView.onSetClipFadeCurve = { [weak self] id, edge, curve in
             self?.projectController.setClipFadeCurve(clipID: id, edge: edge, curve: curve)
-            self?.showStatus("\(edge == .left ? "Fade in" : "Fade out") curve: \(curve.displayName)")
+            self?.showStatus(L10n.format("%@ curve: %@", L10n.tr(edge == .left ? "Fade in" : "Fade out"), L10n.tr(curve.displayName)))
         }
         timelineView.onCreateCrossfade = { [weak self] id in
             guard let self = self else { return }
             if self.projectController.createCrossfade(involving: id) {
-                self.showStatus("Created crossfade")
+                self.showStatus(L10n.tr("Created crossfade"))
             } else {
-                self.showStatus("Select two overlapping clips on the same track to create a crossfade.")
+                self.showStatus(L10n.tr("Select two overlapping clips on the same track to create a crossfade."))
             }
         }
         timelineView.onSetCrossfadeCurve = { [weak self] id, curve in
             self?.projectController.setCrossfadeCurve(involving: id, curve: curve)
-            self?.showStatus("Crossfade curve: \(curve.displayName)")
+            self?.showStatus(L10n.format("Crossfade curve: %@", L10n.tr(curve.displayName)))
         }
         timelineView.onRemoveCrossfades = { [weak self] id in
             self?.projectController.removeCrossfades(involving: id)
-            self?.showStatus("Removed crossfades")
+            self?.showStatus(L10n.tr("Removed crossfades"))
         }
         timelineView.onAddVolumeKeyframe = { [weak self] id, time, gainDB in
             self?.projectController.addVolumeKeyframe(clipID: id, time: time, gainDB: gainDB)
-            self?.showStatus("Added volume keyframe")
+            self?.showStatus(L10n.tr("Added volume keyframe"))
         }
         timelineView.onAddVolumeKeyframeAtPlayhead = { [weak self] id in
             self?.projectController.addVolumeKeyframeAtPlayhead(clipID: id)
-            self?.showStatus("Added volume keyframe")
+            self?.showStatus(L10n.tr("Added volume keyframe"))
         }
         timelineView.onMoveVolumeKeyframe = { [weak self] id, keyframeID, time, gainDB in
             self?.projectController.moveVolumeKeyframe(clipID: id, keyframeID: keyframeID, time: time, gainDB: gainDB)
         }
         timelineView.onDeleteVolumeKeyframe = { [weak self] id, keyframeID in
             self?.projectController.deleteVolumeKeyframe(clipID: id, keyframeID: keyframeID)
-            self?.showStatus("Deleted volume keyframe")
+            self?.showStatus(L10n.tr("Deleted volume keyframe"))
         }
         timelineView.onClearVolumeAutomation = { [weak self] id in
             self?.projectController.clearVolumeAutomation(clipID: id)
-            self?.showStatus("Cleared volume automation")
+            self?.showStatus(L10n.tr("Cleared volume automation"))
         }
         timelineView.onNormalizeClip = { [weak self] id in
             self?.normalizeClip(clipID: id)
@@ -298,7 +298,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         masterVolumeSlider.target = self
         masterVolumeSlider.action = #selector(masterVolumeChanged)
         masterVolumeSlider.onBeginContinuousChange = { [weak self] in
-            self?.projectController.beginContinuousEdit(actionName: "Master Volume")
+            self?.projectController.beginContinuousEdit(actionName: L10n.tr("Master Volume"))
         }
         masterVolumeSlider.onEndContinuousChange = { [weak self] in
             self?.projectController.endContinuousEdit()
@@ -314,7 +314,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         clipIndicator.isBordered = false
         clipIndicator.font = .systemFont(ofSize: 10, weight: .bold)
         clipIndicator.contentTintColor = .secondaryLabelColor
-        clipIndicator.toolTip = "Output clipping indicator"
+        clipIndicator.toolTip = L10n.tr("Output clipping indicator")
     }
 
     private func buildRootView() -> NSView {
@@ -324,7 +324,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         mainSplitView = split
 
         let left = NSView()
-        let leftTitle = NSTextField(labelWithString: "Media")
+        let leftTitle = NSTextField(labelWithString: L10n.tr("Media"))
         leftTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         leftTitle.translatesAutoresizingMaskIntoConstraints = false
         mediaBin.view.translatesAutoresizingMaskIntoConstraints = false
@@ -367,7 +367,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         statusBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusBar.addSubview(statusLabel)
-        let masterLabel = NSTextField(labelWithString: "Master")
+        let masterLabel = NSTextField(labelWithString: L10n.tr("Master"))
         masterLabel.font = .systemFont(ofSize: 11, weight: .medium)
         let masterStack = NSStackView(views: [masterLabel, masterVolumeSlider, masterVolumeLabel, masterMeterView, clipIndicator])
         masterStack.orientation = .horizontal
@@ -432,44 +432,44 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         let proxyReady = regeneratingProxyIDs.filter { project.asset(id: $0)?.proxyStatus == .ready }
         if !proxyReady.isEmpty {
             regeneratingProxyIDs.subtract(proxyReady)
-            showStatus("Audio proxy regenerated")
+            showStatus(L10n.tr("Audio proxy regenerated"))
         }
 
         let waveformReady = regeneratingWaveformIDs.filter { project.asset(id: $0)?.waveformStatus == .ready }
         if !waveformReady.isEmpty {
             regeneratingWaveformIDs.subtract(waveformReady)
-            showStatus("Waveform regenerated")
+            showStatus(L10n.tr("Waveform regenerated"))
         }
 
         let waveformFailed = regeneratingWaveformIDs.filter { project.asset(id: $0)?.waveformStatus == .failed }
         if !waveformFailed.isEmpty {
             regeneratingWaveformIDs.subtract(waveformFailed)
-            showStatus("Waveform generation failed")
+            showStatus(L10n.tr("Waveform generation failed"))
         }
 
         let proxyFailed = regeneratingProxyIDs.filter { project.asset(id: $0)?.proxyStatus == .failed }
         if !proxyFailed.isEmpty {
             regeneratingProxyIDs.subtract(proxyFailed)
-            showStatus("Audio proxy regeneration failed")
+            showStatus(L10n.tr("Audio proxy regeneration failed"))
         }
     }
 
     private func statusMessage(for result: TimelinePlacementResult) -> String {
         var parts: [String] = []
         if result.createdTrackNames.count == 1, let name = result.createdTrackNames.first {
-            parts.append("Added track \(name)")
+            parts.append(L10n.format("Added track %@", name))
         } else if let first = result.createdTrackNames.first, let last = result.createdTrackNames.last {
-            parts.append("Added tracks \(first)-\(last)")
+            parts.append(L10n.format("Added tracks %@-%@", first, last))
         }
-        parts.append("Added clip to \(result.targetTrackName)")
+        parts.append(L10n.format("Added clip to %@", result.targetTrackName))
         if result.wasTrackClamped {
-            parts.append("track target limited")
+            parts.append(L10n.tr("track target limited"))
         }
         if result.mediaWasMissing {
-            parts.append("media placed offline")
+            parts.append(L10n.tr("media placed offline"))
         }
         if result.proxyIsPreparing {
-            parts.append("preparing audio proxy")
+            parts.append(L10n.tr("preparing audio proxy"))
         }
         return parts.joined(separator: "; ")
     }
@@ -496,7 +496,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             self?.cancelPendingPlaybackRefresh()
             self?.playbackEngine.stop()
             self?.projectController.newProject()
-            self?.showStatus("New project created")
+            self?.showStatus(L10n.tr("New project created"))
         }
     }
 
@@ -523,14 +523,14 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         cancelPendingPlaybackRefresh()
         playbackEngine.stop()
         projectController.open(url: url)
-        showStatus("Project opened")
+        showStatus(L10n.tr("Project opened"))
     }
 
     @objc func saveProject(_ sender: Any?) {
         if !projectController.save() {
             saveProjectAs(sender)
         } else {
-            showStatus("Project saved")
+            showStatus(L10n.tr("Project saved"))
         }
     }
 
@@ -541,7 +541,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             if self?.projectController.save(to: url) == true {
-                self?.showStatus("Project saved")
+                self?.showStatus(L10n.tr("Project saved"))
             }
         }
     }
@@ -579,7 +579,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
     private func importDroppedMedia(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        showStatus("Scanning media files...")
+        showStatus(L10n.tr("Scanning media files..."))
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Self.supportedMediaFiles(from: urls)
             DispatchQueue.main.async {
@@ -591,7 +591,11 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     private func importMediaFilesToLibrary(_ urls: [URL], skippedCount: Int) {
         let uniqueURLs = Array(Set(urls.map { $0.standardizedFileURL })).sorted { $0.path < $1.path }
         guard !uniqueURLs.isEmpty else {
-            showStatus(skippedCount > 0 ? "Skipped unsupported file\(skippedCount == 1 ? "" : "s")" : "No supported media files found")
+            if skippedCount > 0 {
+                showStatus(L10n.format(skippedCount == 1 ? "Skipped %d unsupported file" : "Skipped %d unsupported files", skippedCount))
+            } else {
+                showStatus(L10n.tr("No supported media files found"))
+            }
             return
         }
 
@@ -599,7 +603,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         var imported = 0
         var duplicates = 0
         var failed = 0
-        showStatus("Importing \(uniqueURLs.count) file\(uniqueURLs.count == 1 ? "" : "s")")
+        showStatus(L10n.format(uniqueURLs.count == 1 ? "Importing %d file" : "Importing %d files", uniqueURLs.count))
         uniqueURLs.forEach { url in
             projectController.importMediaToLibrary(url: url) { [weak self] outcome in
                 guard let self = self else { return }
@@ -607,7 +611,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 switch outcome {
                 case .imported(let asset):
                     imported += 1
-                    self.showStatus(asset.kind == .videoAudio ? "Generating audio proxy..." : "Generating waveform...")
+                    self.showStatus(L10n.tr(asset.kind == .videoAudio ? "Generating audio proxy..." : "Generating waveform..."))
                 case .duplicate(let asset):
                     duplicates += 1
                     self.mediaBin.selectAsset(id: asset.id)
@@ -620,18 +624,18 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
                 var parts: [String] = []
                 if imported > 0 {
-                    parts.append("Imported \(imported) file\(imported == 1 ? "" : "s")")
+                    parts.append(L10n.format(imported == 1 ? "Imported %d file" : "Imported %d files", imported))
                 }
                 if duplicates > 0 {
-                    parts.append("\(duplicates) already imported")
+                    parts.append(L10n.format("%d already imported", duplicates))
                 }
                 if skippedCount > 0 {
-                    parts.append("skipped \(skippedCount) unsupported")
+                    parts.append(L10n.format("skipped %d unsupported", skippedCount))
                 }
                 if failed > 0 {
-                    parts.append("\(failed) failed")
+                    parts.append(L10n.format("%d failed", failed))
                 }
-                self.showStatus(parts.isEmpty ? "No media imported" : parts.joined(separator: ", "))
+                self.showStatus(parts.isEmpty ? L10n.tr("No media imported") : parts.joined(separator: L10n.tr(", ")))
             }
         }
     }
@@ -675,12 +679,12 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
     @objc func exportTimeline(_ sender: Any?) {
         if !projectController.refreshMediaAvailability().isEmpty {
-            showMissingMediaBlockedMessage(action: "export")
+            showMissingMediaBlockedMessage(action: L10n.tr("export"))
             return
         }
         let unavailable = unavailableVideoProxyAssets()
         if !unavailable.isEmpty {
-            showError("Finish audio proxy generation or relink failed video media before exporting:\n\(unavailable.map { $0.metadata.fileName }.joined(separator: "\n"))")
+            showError(L10n.format("Finish audio proxy generation or relink failed video media before exporting:\n%@", unavailable.map { $0.metadata.fileName }.joined(separator: "\n")))
             return
         }
         ExportPanelController.show(window: window, project: projectController.project) { [weak self] settings in
@@ -703,20 +707,18 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 case .success(let exportResult):
                     if exportResult.clippingDetected {
                         self.setClippingIndicator(active: true)
-                        self.showStatus("Export completed with clipping warning")
+                        self.showStatus(L10n.tr("Export completed with clipping warning"))
                         let peakDB = 20 * log10(max(exportResult.maximumPeak, 0.000_001))
-                        self.showInfo(
-                            String(
-                                format: "Export completed, but clipping was detected (peak %.2f dBFS). Consider lowering clip, track, or master volume.",
-                                peakDB
-                            )
-                        )
+                        self.showInfo(L10n.format(
+                            "Export completed, but clipping was detected (peak %.2f dBFS). Consider lowering clip, track, or master volume.",
+                            peakDB
+                        ))
                     } else {
-                        self.showStatus("Export completed")
-                        self.showInfo("Export complete.")
+                        self.showStatus(L10n.tr("Export completed"))
+                        self.showInfo(L10n.tr("Export complete."))
                     }
                 case .failure(let error):
-                    self.showStatus("Export failed")
+                    self.showStatus(L10n.tr("Export failed"))
                     self.showError(error.localizedDescription)
                 }
             }
@@ -725,7 +727,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
     @objc func relinkMissingMedia(_ sender: Any?) {
         guard let first = projectController.project.missingAssets.first else {
-            showStatus("No missing media")
+            showStatus(L10n.tr("No missing media"))
             return
         }
         chooseRelinkFile(assetID: first.id)
@@ -737,22 +739,24 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
     @objc func removeUnusedMedia(_ sender: Any?) {
         let removed = projectController.removeUnusedMedia()
-        showStatus(removed == 0 ? "No unused media to remove" : "Removed \(removed) unused media item\(removed == 1 ? "" : "s")")
+        showStatus(removed == 0
+            ? L10n.tr("No unused media to remove")
+            : L10n.format(removed == 1 ? "Removed %d unused media item" : "Removed %d unused media items", removed))
     }
 
     @objc func regenerateAllWaveforms(_ sender: Any?) {
         projectController.regenerateAllWaveforms()
-        showStatus("Regenerating waveforms...")
+        showStatus(L10n.tr("Regenerating waveforms..."))
     }
 
     @objc func regenerateFailedWaveforms(_ sender: Any?) {
         projectController.regenerateFailedWaveforms()
-        showStatus("Regenerating failed waveforms...")
+        showStatus(L10n.tr("Regenerating failed waveforms..."))
     }
 
     @objc func regenerateAllVideoProxies(_ sender: Any?) {
         projectController.regenerateAllVideoProxies()
-        showStatus("Regenerating audio proxies...")
+        showStatus(L10n.tr("Regenerating audio proxies..."))
     }
 
     @objc func collectProjectMedia(_ sender: Any?) {
@@ -760,7 +764,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             projectController.usageCountsByAssetID()[asset.id, default: 0] > 0 && asset.isMissing
         }.count
         guard missingCount == 0 else {
-            showError("Cannot collect project: \(missingCount) file\(missingCount == 1 ? "" : "s") are missing.")
+            showError(L10n.format(missingCount == 1 ? "Cannot collect project: %d file is missing." : "Cannot collect project: %d files are missing.", missingCount))
             return
         }
         let panel = NSOpenPanel()
@@ -768,21 +772,21 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Collect"
+        panel.prompt = L10n.tr("Collect")
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard response == .OK, let folder = panel.url, let self = self else { return }
             let snapshot = self.projectController.makeProjectMediaCollectionSnapshot()
-            self.showStatus("Collecting project media...")
+            self.showStatus(L10n.tr("Collecting project media..."))
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let projectURL = try self.projectController.collectProjectMedia(snapshot: snapshot, to: folder)
                     DispatchQueue.main.async {
-                        self.showStatus("Collected project media")
-                        self.showInfo("Collected project media:\n\(projectURL.path)")
+                        self.showStatus(L10n.tr("Collected project media"))
+                        self.showInfo(L10n.format("Collected project media:\n%@", projectURL.path))
                     }
                 } catch {
                     DispatchQueue.main.async {
-                        self.showStatus("Collect project failed")
+                        self.showStatus(L10n.tr("Collect project failed"))
                         self.showError(error.localizedDescription)
                     }
                 }
@@ -799,39 +803,39 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
     @objc func rippleDeleteSelectedClips(_ sender: Any?) {
         projectController.rippleDeleteSelectedClips()
-        showStatus("Ripple deleted selected clips")
+        showStatus(L10n.tr("Ripple deleted selected clips"))
     }
 
     @objc func applyFadeIn(_ sender: Any?) {
-        promptForFade(title: "Apply Fade In") { [weak self] duration, curve in
+        promptForFade(title: L10n.tr("Apply Fade In")) { [weak self] duration, curve in
             self?.projectController.applyFadeToSelected(edge: .left, duration: duration, curve: curve)
-            self?.showStatus("Applied fade in")
+            self?.showStatus(L10n.tr("Applied fade in"))
         }
     }
 
     @objc func applyFadeOut(_ sender: Any?) {
-        promptForFade(title: "Apply Fade Out") { [weak self] duration, curve in
+        promptForFade(title: L10n.tr("Apply Fade Out")) { [weak self] duration, curve in
             self?.projectController.applyFadeToSelected(edge: .right, duration: duration, curve: curve)
-            self?.showStatus("Applied fade out")
+            self?.showStatus(L10n.tr("Applied fade out"))
         }
     }
 
     @objc func removeFades(_ sender: Any?) {
         projectController.removeFadesFromSelectedClips()
-        showStatus("Removed fades")
+        showStatus(L10n.tr("Removed fades"))
     }
 
     @objc func applyCrossfade(_ sender: Any?) {
         if projectController.createCrossfadeForSelectedClips() {
-            showStatus("Created crossfade")
+            showStatus(L10n.tr("Created crossfade"))
         } else {
-            showStatus("Select two overlapping clips on the same track to create a crossfade.")
+            showStatus(L10n.tr("Select two overlapping clips on the same track to create a crossfade."))
         }
     }
 
     @objc func removeCrossfades(_ sender: Any?) {
         projectController.removeCrossfadesForSelectedClips()
-        showStatus("Removed crossfades")
+        showStatus(L10n.tr("Removed crossfades"))
     }
 
     @objc func toggleRazorTool(_ sender: Any?) {
@@ -869,7 +873,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         let projectEnd = max(projectController.project.duration, markerEnd)
         guard projectEnd > 0 else {
             projectController.setTimelineZoom(80)
-            showStatus("Zoom reset")
+            showStatus(L10n.tr("Zoom reset"))
             return
         }
 
@@ -881,7 +885,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             clipView.scroll(to: NSPoint(x: 0, y: clipView.bounds.origin.y))
             timelineScrollView?.reflectScrolledClipView(clipView)
         }
-        showStatus("Zoomed to fit project")
+        showStatus(L10n.tr("Zoomed to fit project"))
     }
 
     @objc func nudgeLeft(_ sender: Any?) {
@@ -910,105 +914,105 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
     @objc func setInPoint(_ sender: Any?) {
         projectController.setInPoint()
-        showStatus("Set In point")
+        showStatus(L10n.tr("Set In point"))
     }
 
     @objc func setOutPoint(_ sender: Any?) {
         projectController.setOutPoint()
-        showStatus("Set Out point")
+        showStatus(L10n.tr("Set Out point"))
     }
 
     @objc func clearInOutRange(_ sender: Any?) {
         projectController.clearInOutRange()
-        showStatus("Cleared In/Out range")
+        showStatus(L10n.tr("Cleared In/Out range"))
     }
 
     @objc func toggleSnapping(_ sender: Any?) {
         projectController.toggleSnapping()
-        showStatus(projectController.project.viewState.snappingEnabled ? "Snapping enabled" : "Snapping disabled")
+        showStatus(L10n.tr(projectController.project.viewState.snappingEnabled ? "Snapping enabled" : "Snapping disabled"))
     }
 
     @objc func toggleFollowPlayhead(_ sender: Any?) {
         projectController.toggleFollowPlayhead()
-        showStatus(projectController.project.viewState.followPlayhead ? "Follow playhead enabled" : "Follow playhead disabled")
+        showStatus(L10n.tr(projectController.project.viewState.followPlayhead ? "Follow playhead enabled" : "Follow playhead disabled"))
     }
 
     @objc func toggleLoopRange(_ sender: Any?) {
         projectController.toggleLoopRange()
         let enabled = projectController.project.viewState.loopRangeEnabled
         if enabled && projectController.project.viewState.validRange == nil {
-            showStatus("Set In and Out points to loop a range.")
+            showStatus(L10n.tr("Set In and Out points to loop a range."))
         } else {
-            showStatus(enabled ? "Loop range enabled" : "Loop range disabled")
+            showStatus(L10n.tr(enabled ? "Loop range enabled" : "Loop range disabled"))
         }
     }
 
     @objc func increaseTrackHeight(_ sender: Any?) {
         projectController.increaseTrackHeight()
-        showStatus("Track height increased")
+        showStatus(L10n.tr("Track height increased"))
     }
 
     @objc func decreaseTrackHeight(_ sender: Any?) {
         projectController.decreaseTrackHeight()
-        showStatus("Track height decreased")
+        showStatus(L10n.tr("Track height decreased"))
     }
 
     @objc func resetTrackHeight(_ sender: Any?) {
         projectController.resetTrackHeight()
-        showStatus("Track height reset")
+        showStatus(L10n.tr("Track height reset"))
     }
 
     @objc func jumpToProjectStart(_ sender: Any?) {
         seekPlayback(to: 0)
-        showStatus("Jumped to start")
+        showStatus(L10n.tr("Jumped to start"))
     }
 
     @objc func jumpToProjectEnd(_ sender: Any?) {
         let markerEnd = projectController.project.timeline.markers.map(\.time).max() ?? 0
         seekPlayback(to: max(projectController.project.duration, markerEnd))
-        showStatus("Jumped to end")
+        showStatus(L10n.tr("Jumped to end"))
     }
 
     @objc func jumpToNextMarker(_ sender: Any?) {
         let current = projectController.playheadTime + 0.001
         guard let marker = projectController.project.timeline.markers.filter({ $0.time > current }).sorted(by: { $0.time < $1.time }).first else {
-            showStatus("No next marker")
+            showStatus(L10n.tr("No next marker"))
             return
         }
         seekPlayback(to: marker.time)
-        showStatus("Next marker")
+        showStatus(L10n.tr("Next marker"))
     }
 
     @objc func jumpToPreviousMarker(_ sender: Any?) {
         let current = projectController.playheadTime - 0.001
         guard let marker = projectController.project.timeline.markers.filter({ $0.time < current }).sorted(by: { $0.time > $1.time }).first else {
-            showStatus("No previous marker")
+            showStatus(L10n.tr("No previous marker"))
             return
         }
         seekPlayback(to: marker.time)
-        showStatus("Previous marker")
+        showStatus(L10n.tr("Previous marker"))
     }
 
     @objc func jumpToNextClipEdge(_ sender: Any?) {
         let current = projectController.playheadTime + 0.001
         let edges = clipEdges().filter { $0 > current }.sorted()
         guard let edge = edges.first else {
-            showStatus("No next clip edge")
+            showStatus(L10n.tr("No next clip edge"))
             return
         }
         seekPlayback(to: edge)
-        showStatus("Next clip edge")
+        showStatus(L10n.tr("Next clip edge"))
     }
 
     @objc func jumpToPreviousClipEdge(_ sender: Any?) {
         let current = projectController.playheadTime - 0.001
         let edges = clipEdges().filter { $0 < current }.sorted(by: >)
         guard let edge = edges.first else {
-            showStatus("No previous clip edge")
+            showStatus(L10n.tr("No previous clip edge"))
             return
         }
         seekPlayback(to: edge)
-        showStatus("Previous clip edge")
+        showStatus(L10n.tr("Previous clip edge"))
     }
 
     @objc func resetWindowLayout(_ sender: Any?) {
@@ -1022,19 +1026,19 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
         let timelineHeight = max(320, contentSize.height - 220)
         timelineInspectorSplitView.setPosition(timelineHeight, ofDividerAt: 0)
-        showStatus("Window layout reset")
+        showStatus(L10n.tr("Window layout reset"))
     }
 
     @objc private func masterVolumeChanged() {
         projectController.setMasterVolume(masterVolumeSlider.doubleValue)
         masterVolumeLabel.stringValue = String(format: "%.0f dB", masterVolumeSlider.doubleValue)
-        showStatus("Master volume changed")
+        showStatus(L10n.tr("Master volume changed"))
     }
 
     @objc private func clearClippingIndicator() {
         lastPlaybackClipDetectedAt = nil
         setClippingIndicator(active: false)
-        showStatus("Clipping indicator reset")
+        showStatus(L10n.tr("Clipping indicator reset"))
     }
 
     func clearApplicationCaches(completion: @escaping (Result<ApplicationCacheClearResult, Error>) -> Void) {
@@ -1042,7 +1046,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             let error = NSError(
                 domain: "LightAudio",
                 code: 71,
-                userInfo: [NSLocalizedDescriptionKey: "Finish or cancel the current export before clearing the app cache."]
+                userInfo: [NSLocalizedDescriptionKey: L10n.tr("Finish or cancel the current export before clearing the app cache.")]
             )
             showStatus(error.localizedDescription)
             completion(.failure(error))
@@ -1050,13 +1054,13 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         }
         cancelPendingPlaybackRefresh()
         playbackEngine.stop()
-        showStatus("Clearing app cache...")
+        showStatus(L10n.tr("Clearing app cache..."))
         projectController.clearApplicationCaches { [weak self] result in
             switch result {
             case .success(let cleared):
                 self?.showStatus(cleared.summary)
             case .failure:
-                self?.showStatus("Could not clear all app caches")
+                self?.showStatus(L10n.tr("Could not clear all app caches"))
             }
             completion(result)
         }
@@ -1075,7 +1079,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             playbackTimer = nil
             resetMeters()
             updateToolbarLabels()
-            showStatus(wasPreparing ? "Playback cancelled" : "Playback paused")
+            showStatus(L10n.tr(wasPreparing ? "Playback cancelled" : "Playback paused"))
         } else {
             startPlayback(from: projectController.playheadTime)
         }
@@ -1083,13 +1087,13 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
     private func startPlayback(from time: TimeInterval) {
         if !projectController.refreshMediaAvailability().isEmpty {
-            showMissingMediaBlockedMessage(action: "play")
+            showMissingMediaBlockedMessage(action: L10n.tr("play"))
             return
         }
         let unavailable = unavailableVideoProxyAssets()
         if !unavailable.isEmpty {
-            showStatus("Playback blocked by unavailable audio proxies")
-            showError("Finish audio proxy generation or relink failed video media before playback:\n\(unavailable.map { $0.metadata.fileName }.joined(separator: "\n"))")
+            showStatus(L10n.tr("Playback blocked by unavailable audio proxies"))
+            showError(L10n.format("Finish audio proxy generation or relink failed video media before playback:\n%@", unavailable.map { $0.metadata.fileName }.joined(separator: "\n")))
             return
         }
         let playbackStart = loopAdjustedStartTime(from: time)
@@ -1097,7 +1101,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         lastPlaybackClipDetectedAt = nil
         setClippingIndicator(active: false)
         resetMeters()
-        showStatus("Preparing playback...")
+        showStatus(L10n.tr("Preparing playback..."))
         playbackEngine.play(project: projectController.project, from: playbackStart, endingAt: playbackEnd) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -1107,10 +1111,10 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 self.timeLabel.stringValue = Timecode.string(playbackStart)
                 self.startPlaybackTimer()
                 self.updateToolbarLabels()
-                self.showStatus("Playing")
+                self.showStatus(L10n.tr("Playing"))
             case .failure(let error):
                 self.updateToolbarLabels()
-                self.showStatus("Playback failed")
+                self.showStatus(L10n.tr("Playback failed"))
                 self.showError(error.localizedDescription)
             }
         }
@@ -1150,7 +1154,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         if let range = activeLoopRange() {
             startPlayback(from: range.start)
         } else {
-            showStatus("Playback stopped")
+            showStatus(L10n.tr("Playback stopped"))
         }
     }
 
@@ -1164,14 +1168,14 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         timelineView.playheadTime = failedAt
         timeLabel.stringValue = Timecode.string(failedAt)
         resetMeters()
-        showStatus("Playback stopped: a source could not be read")
-        showError("Playback stopped because media could not be read.\n\n\(error.localizedDescription)")
+        showStatus(L10n.tr("Playback stopped: a source could not be read"))
+        showError(L10n.format("Playback stopped because media could not be read.\n\n%@", error.localizedDescription))
     }
 
     private func loopAdjustedStartTime(from time: TimeInterval) -> TimeInterval {
         guard let range = activeLoopRange() else {
             if projectController.project.viewState.loopRangeEnabled {
-                showStatus("Set In and Out points to loop a range.")
+                showStatus(L10n.tr("Set In and Out points to loop a range."))
             }
             return time
         }
@@ -1196,7 +1200,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     private func relink(assetID: UUID, to replacementURL: URL) {
-        showStatus("Verifying media...")
+        showStatus(L10n.tr("Verifying media..."))
         projectController.relinkAsync(assetID: assetID, replacementURL: replacementURL) { [weak self] result in
             guard let self else { return }
             guard result.accepted else {
@@ -1204,19 +1208,19 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 return
             }
             guard result.requiresConfirmation else {
-                self.showStatus("Media relinked")
+                self.showStatus(L10n.tr("Media relinked"))
                 return
             }
 
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = "Media may not match"
-            alert.informativeText = "The replacement matches duration, but \(result.warnings.joined(separator: ", ")). Relink it anyway?"
-            alert.addButton(withTitle: "Relink Anyway")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = L10n.tr("Media may not match")
+            alert.informativeText = L10n.format("The replacement matches duration, but %@. Relink it anyway?", result.warnings.joined(separator: L10n.tr(", ")))
+            alert.addButton(withTitle: L10n.tr("Relink Anyway"))
+            alert.addButton(withTitle: L10n.tr("Cancel"))
             alert.beginSheetModal(for: self.window!) { [weak self] response in
                 guard response == .alertFirstButtonReturn, let self else { return }
-                self.showStatus("Relinking media...")
+                self.showStatus(L10n.tr("Relinking media..."))
                 self.projectController.relinkAsync(
                     assetID: assetID,
                     replacementURL: replacementURL,
@@ -1224,7 +1228,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 ) { [weak self] confirmed in
                     guard let self else { return }
                     if confirmed.accepted {
-                        self.showStatus("Media relinked with confirmation")
+                        self.showStatus(L10n.tr("Media relinked with confirmation"))
                     } else {
                         self.showError(confirmed.reason)
                     }
@@ -1239,10 +1243,10 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         panel.canChooseDirectories = true
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
-            self?.showStatus("Locating missing media...")
+            self?.showStatus(L10n.tr("Locating missing media..."))
             self?.projectController.locateMissingAssets(in: url) { messages in
-                self?.showStatus(messages.isEmpty ? "No missing media found" : "Relink scan completed")
-                self?.showInfo(messages.isEmpty ? "No missing media found." : messages.joined(separator: "\n"))
+                self?.showStatus(L10n.tr(messages.isEmpty ? "No missing media found" : "Relink scan completed"))
+                self?.showInfo(messages.isEmpty ? L10n.tr("No missing media found.") : messages.joined(separator: "\n"))
             }
         }
     }
@@ -1251,65 +1255,69 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         guard let asset = projectController.project.asset(id: assetID) else { return }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
-        let fileSize = asset.metadata.fileSize.map { formatter.string(fromByteCount: $0) } ?? "Unknown"
-        let mediaType = asset.kind == .videoAudio ? "Video-origin audio" : "Audio"
-        let proxyStatus = asset.kind == .videoAudio ? "\nProxy status: \(asset.proxyStatus.rawValue)" : ""
-        let relinkState = asset.isMissing ? "Missing" : "Available"
+        let fileSize = asset.metadata.fileSize.map { formatter.string(fromByteCount: $0) } ?? L10n.tr("Unknown")
+        let mediaType = L10n.tr(asset.kind == .videoAudio ? "Video-origin audio" : "Audio")
+        let proxyStatus = asset.kind == .videoAudio ? "\n" + L10n.format("Proxy status: %@", L10n.tr(asset.proxyStatus.rawValue)) : ""
+        let relinkState = L10n.tr(asset.isMissing ? "Missing" : "Available")
         let resolvedURL = FileReferenceResolver().resolvedURL(for: asset, projectURL: projectController.projectURL)
-        let imported = asset.importedAt.map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .short) } ?? "Unknown"
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = L10n.locale
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        let imported = asset.importedAt.map { dateFormatter.string(from: $0) } ?? L10n.tr("Unknown")
         let usage = projectController.usageCountsByAssetID()[asset.id, default: 0]
-        let message = """
-        Display name: \(asset.displayName)
-        Original file name: \(asset.metadata.fileName)
-        Original path: \(asset.originalPath)
-        Resolved path: \(resolvedURL.path)
-        Media type: \(mediaType)
-        Duration: \(Timecode.string(asset.metadata.duration))
-        Sample rate: \(Int(asset.metadata.sampleRate)) Hz
-        Channels: \(asset.metadata.channelCount)
-        File size: \(fileSize)
-        Date imported: \(imported)
-        Usage count: \(usage)
-        Waveform status: \(asset.waveformStatus.rawValue)\(proxyStatus)
-        Waveform error: \(asset.waveformFailureReason ?? "None")
-        State: \(relinkState)
-        """
+        let message = [
+            L10n.format("Display name: %@", asset.displayName),
+            L10n.format("Original file name: %@", asset.metadata.fileName),
+            L10n.format("Original path: %@", asset.originalPath),
+            L10n.format("Resolved path: %@", resolvedURL.path),
+            L10n.format("Media type: %@", mediaType),
+            L10n.format("Duration: %@", Timecode.string(asset.metadata.duration)),
+            L10n.format("Sample rate: %d Hz", Int(asset.metadata.sampleRate)),
+            L10n.format("Channels: %d", asset.metadata.channelCount),
+            L10n.format("File size: %@", fileSize),
+            L10n.format("Date imported: %@", imported),
+            L10n.format("Usage count: %d", usage),
+            L10n.format("Waveform status: %@", L10n.tr(asset.waveformStatus.rawValue)) + proxyStatus,
+            L10n.format("Waveform error: %@", asset.waveformFailureReason ?? L10n.tr("None")),
+            L10n.format("State: %@", relinkState)
+        ].joined(separator: "\n")
         showInfo(message)
     }
 
     private func showWaveformError(assetID: UUID) {
         guard let asset = projectController.project.asset(id: assetID) else { return }
         let reason = asset.waveformFailureReason
-            ?? "No detailed waveform error was recorded. Try Regenerate Waveform to run the current analyzer again."
-        showInfo("Waveform generation failed for \(asset.displayName).\n\n\(reason)")
+            ?? L10n.tr("No detailed waveform error was recorded. Try Regenerate Waveform to run the current analyzer again.")
+        showInfo(L10n.format("Waveform generation failed for %@.\n\n%@", asset.displayName, reason))
     }
 
     private func renameMedia(assetID: UUID) {
         guard let asset = projectController.project.asset(id: assetID) else { return }
         let alert = NSAlert()
-        alert.messageText = "Rename Media"
-        alert.informativeText = "This changes only the project display name. The original file on disk is not renamed."
+        alert.messageText = L10n.tr("Rename Media")
+        alert.informativeText = L10n.tr("This changes only the project display name. The original file on disk is not renamed.")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.stringValue = asset.displayName
         alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.tr("Rename"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window!) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             self?.projectController.renameMedia(assetID: assetID, name: field.stringValue)
-            self?.showStatus("Renamed media")
+            self?.showStatus(L10n.tr("Renamed media"))
         }
     }
 
     private func renameTrack(trackID: UUID) {
         guard let track = projectController.project.timeline.tracks.first(where: { $0.id == trackID }) else { return }
         let alert = NSAlert()
-        alert.messageText = "Rename Track"
+        alert.messageText = L10n.tr("Rename Track")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.stringValue = track.name
         alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.tr("Rename"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window!) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             self?.projectController.renameTrack(trackID: trackID, name: field.stringValue)
@@ -1320,31 +1328,31 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         guard let track = projectController.project.timeline.tracks.first(where: { $0.id == trackID }) else { return }
         guard !track.clips.isEmpty else {
             projectController.deleteTrack(trackID)
-            showStatus("Deleted track")
+            showStatus(L10n.tr("Deleted track"))
             return
         }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Delete Track?"
-        alert.informativeText = "This will remove \(track.name) and all clips on it."
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.tr("Delete Track?")
+        alert.informativeText = L10n.format("This will remove %@ and all clips on it.", track.name)
+        alert.addButton(withTitle: L10n.tr("Delete"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window!) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             self?.projectController.deleteTrack(trackID, allowNonEmpty: true)
-            self?.showStatus("Deleted track")
+            self?.showStatus(L10n.tr("Deleted track"))
         }
     }
 
     private func renameMarker(markerID: UUID) {
         guard let marker = projectController.project.timeline.markers.first(where: { $0.id == markerID }) else { return }
         let alert = NSAlert()
-        alert.messageText = "Rename Marker"
+        alert.messageText = L10n.tr("Rename Marker")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.stringValue = marker.name
         alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.tr("Rename"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window!) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             self?.projectController.renameMarker(markerID, name: field.stringValue)
@@ -1354,22 +1362,22 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     private func renameClip(clipID: UUID) {
         guard let clip = projectController.project.timeline.tracks.flatMap({ $0.clips }).first(where: { $0.id == clipID }) else { return }
         let alert = NSAlert()
-        alert.messageText = "Rename Clip"
+        alert.messageText = L10n.tr("Rename Clip")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.stringValue = clip.customName ?? ""
-        field.placeholderString = projectController.project.asset(id: clip.sourceAssetID)?.displayName ?? "Clip"
+        field.placeholderString = projectController.project.asset(id: clip.sourceAssetID)?.displayName ?? L10n.tr("Clip")
         alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Clear")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.tr("Rename"))
+        alert.addButton(withTitle: L10n.tr("Clear"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window!) { [weak self] response in
             switch response {
             case .alertFirstButtonReturn:
                 self?.projectController.renameClip(clipID, name: field.stringValue)
-                self?.showStatus("Renamed clip")
+                self?.showStatus(L10n.tr("Renamed clip"))
             case .alertSecondButtonReturn:
                 self?.projectController.renameClip(clipID, name: nil)
-                self?.showStatus("Cleared clip name")
+                self?.showStatus(L10n.tr("Cleared clip name"))
             default:
                 break
             }
@@ -1379,27 +1387,27 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     private func normalizeClip(clipID: UUID) {
         guard projectController.project.timeline.tracks.flatMap({ $0.clips }).contains(where: { $0.id == clipID }) else { return }
         let alert = NSAlert()
-        alert.messageText = "Analyze and Normalize Clip"
-        alert.informativeText = "Sets clip gain so the visible trimmed region peaks at the target level. Source media is not modified."
+        alert.messageText = L10n.tr("Analyze and Normalize Clip")
+        alert.informativeText = L10n.tr("Sets clip gain so the visible trimmed region peaks at the target level. Source media is not modified.")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 100, height: 24))
         field.stringValue = "-1.0"
         field.alignment = .right
         field.formatter = DecimalNumberFormatter()
-        let label = NSTextField(labelWithString: "Target peak dB")
+        let label = NSTextField(labelWithString: L10n.tr("Target peak dB"))
         let row = NSStackView(views: [label, field])
         row.orientation = .horizontal
         row.spacing = 8
         row.alignment = .centerY
         alert.accessoryView = row
-        alert.addButton(withTitle: "Apply")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L10n.tr("Apply"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window!) { [weak self] response in
             guard response == .alertFirstButtonReturn, let self = self else { return }
-            self.showStatus("Analyzing clip peak...")
+            self.showStatus(L10n.tr("Analyzing clip peak..."))
             self.projectController.normalizeClip(clipID: clipID, targetPeakDB: field.doubleValue) { [weak self] result in
                 switch result {
                 case .success(let gainDB):
-                    self?.showStatus("Normalized clip to \(String(format: "%.1f dB", gainDB)) gain")
+                    self?.showStatus(L10n.format("Normalized clip to %.1f dB gain", gainDB))
                 case .failure(let error):
                     self?.showStatus(error.localizedDescription)
                     self?.showError(error.localizedDescription)
@@ -1458,7 +1466,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             lastPlaybackClipDetectedAt = ProcessInfo.processInfo.systemUptime
             setClippingIndicator(active: true)
             if !wasClipping {
-                showStatus("Playback clipping detected")
+                showStatus(L10n.tr("Playback clipping detected"))
             }
         } else if clippingActive,
                   let lastPlaybackClipDetectedAt,
@@ -1515,14 +1523,14 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     private func setClippingIndicator(active: Bool) {
         clippingActive = active
         clipIndicator.contentTintColor = active ? .systemRed : .secondaryLabelColor
-        clipIndicator.toolTip = active ? "Output exceeded 0 dBFS recently. Click to clear." : "Output clipping indicator"
+        clipIndicator.toolTip = L10n.tr(active ? "Output exceeded 0 dBFS recently. Click to clear." : "Output clipping indicator")
         masterMeterView.clipping = active
     }
 
     private func showMissingMediaBlockedMessage(action: String) {
         let names = projectController.project.missingAssets.map { $0.metadata.fileName }.joined(separator: "\n")
-        showStatus("Missing media must be relinked before \(action)")
-        showError("Relink missing media before you \(action) this project:\n\(names)")
+        showStatus(L10n.format("Missing media must be relinked before %@", action))
+        showError(L10n.format("Relink missing media before you %@ this project:\n%@", action, names))
     }
 
     private func unavailableVideoProxyAssets() -> [MediaAsset] {
@@ -1548,7 +1556,9 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     private func updateWindowTitle() {
-        window?.title = projectController.isDirty ? "LightAudio Editor - \(projectController.project.name) *" : "LightAudio Editor - \(projectController.project.name)"
+        window?.title = projectController.isDirty
+            ? L10n.format("LightAudio Editor - %@ *", projectController.project.name)
+            : L10n.format("LightAudio Editor - %@", projectController.project.name)
         window?.representedURL = projectController.projectURL
         window?.isDocumentEdited = projectController.isDirty
     }
@@ -1557,20 +1567,20 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         window?.toolbar?.items.forEach { item in
             switch item.itemIdentifier {
             case .snapToggle:
-                item.label = projectController.project.viewState.snappingEnabled ? "Snap On" : "Snap Off"
+                item.label = L10n.tr(projectController.project.viewState.snappingEnabled ? "Snap On" : "Snap Off")
                 item.toolTip = item.label
                 item.view?.toolTip = item.label
             case .followPlayhead:
-                item.label = projectController.project.viewState.followPlayhead ? "Follow On" : "Follow Off"
+                item.label = L10n.tr(projectController.project.viewState.followPlayhead ? "Follow On" : "Follow Off")
                 item.toolTip = item.label
                 item.view?.toolTip = item.label
             case .loopRange:
-                item.label = projectController.project.viewState.loopRangeEnabled ? "Loop On" : "Loop Off"
+                item.label = L10n.tr(projectController.project.viewState.loopRangeEnabled ? "Loop On" : "Loop Off")
                 item.toolTip = item.label
                 item.view?.toolTip = item.label
             case .playPause:
                 let playing = playbackEngine.isPlaying || playbackEngine.isPreparing
-                let label = playing ? "Pause" : "Play"
+                let label = L10n.tr(playing ? "Pause" : "Play")
                 item.label = label
                 item.toolTip = label
                 item.view?.toolTip = label
@@ -1589,11 +1599,11 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             return
         }
         let alert = NSAlert()
-        alert.messageText = "Save changes to this project?"
-        alert.informativeText = "Your unsaved timeline edits will be lost if you continue without saving."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Don't Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.tr("Save changes to this project?")
+        alert.informativeText = L10n.tr("Your unsaved timeline edits will be lost if you continue without saving.")
+        alert.addButton(withTitle: L10n.tr("Save"))
+        alert.addButton(withTitle: L10n.tr("Don't Save"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window!) { [weak self] response in
             switch response {
             case .alertFirstButtonReturn:
@@ -1621,18 +1631,18 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         guard let window = window else { return }
         let alert = NSAlert()
         alert.messageText = title
-        alert.informativeText = "Choose a fade duration and curve for the selected clips."
-        alert.addButton(withTitle: "Apply")
-        alert.addButton(withTitle: "Cancel")
+        alert.informativeText = L10n.tr("Choose a fade duration and curve for the selected clips.")
+        alert.addButton(withTitle: L10n.tr("Apply"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
 
         let durationField = NSTextField(string: "1.00")
         durationField.formatter = DecimalNumberFormatter()
         let curvePopup = NSPopUpButton()
-        FadeCurve.allCases.forEach { curvePopup.addItem(withTitle: $0.displayName) }
+        FadeCurve.allCases.forEach { curvePopup.addItem(withTitle: L10n.tr($0.displayName)) }
         curvePopup.selectItem(at: FadeCurve.allCases.firstIndex(of: .linear) ?? 0)
 
-        let durationLabel = NSTextField(labelWithString: "Duration")
-        let curveLabel = NSTextField(labelWithString: "Curve")
+        let durationLabel = NSTextField(labelWithString: L10n.tr("Duration"))
+        let curveLabel = NSTextField(labelWithString: L10n.tr("Curve"))
         let grid = NSGridView(views: [
             [durationLabel, durationField],
             [curveLabel, curvePopup]
@@ -1658,11 +1668,11 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         }
         guard projectController.isDirty else { return true }
         let alert = NSAlert()
-        alert.messageText = "Save changes before closing?"
-        alert.informativeText = "Your unsaved timeline edits will be lost if you close without saving."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Don't Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.tr("Save changes before closing?")
+        alert.informativeText = L10n.tr("Your unsaved timeline edits will be lost if you close without saving.")
+        alert.addButton(withTitle: L10n.tr("Save"))
+        alert.addButton(withTitle: L10n.tr("Don't Save"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             let shouldClose = saveProjectSynchronously()
@@ -1696,11 +1706,11 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         }
 
         let alert = NSAlert()
-        alert.messageText = "Save changes before quitting?"
-        alert.informativeText = "Your unsaved timeline edits will be lost if you quit without saving."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Don't Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L10n.tr("Save changes before quitting?")
+        alert.informativeText = L10n.tr("Your unsaved timeline edits will be lost if you quit without saving.")
+        alert.addButton(withTitle: L10n.tr("Save"))
+        alert.addButton(withTitle: L10n.tr("Don't Save"))
+        alert.addButton(withTitle: L10n.tr("Cancel"))
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else {
                 completion(false)
@@ -1721,18 +1731,18 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     private func showError(_ message: String) {
-        showStatus(message.components(separatedBy: .newlines).first ?? "Error")
+        showStatus(message.components(separatedBy: .newlines).first ?? L10n.tr("Error"))
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "LightAudio Editor"
+        alert.messageText = L10n.tr("LightAudio Editor")
         alert.informativeText = message
         alert.beginSheetModal(for: window!)
     }
 
     private func showInfo(_ message: String) {
-        showStatus(message.components(separatedBy: .newlines).first ?? "Done")
+        showStatus(message.components(separatedBy: .newlines).first ?? L10n.tr("Done"))
         let alert = NSAlert()
-        alert.messageText = "LightAudio Editor"
+        alert.messageText = L10n.tr("LightAudio Editor")
         alert.informativeText = message
         alert.beginSheetModal(for: window!)
     }
@@ -1788,14 +1798,15 @@ extension MainWindowController: NSToolbarDelegate {
     }
 
     private func configureButtonItem(_ item: NSToolbarItem, label: String, imageName: String, action: Selector) {
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
+        let localizedLabel = L10n.tr(label)
+        item.label = localizedLabel
+        item.paletteLabel = localizedLabel
+        item.toolTip = localizedLabel
         let button = RoundToolbarButton(frame: NSRect(x: 0, y: 0, width: 34, height: 34))
         button.image = NSImage(named: imageName)
         button.target = self
         button.action = action
-        button.toolTip = label
+        button.toolTip = localizedLabel
         item.view = button
         item.minSize = button.frame.size
         item.maxSize = button.frame.size
