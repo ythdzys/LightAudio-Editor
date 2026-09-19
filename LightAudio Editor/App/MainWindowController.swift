@@ -1695,7 +1695,9 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     /// App termination does not reliably pass through a window-close request, so it needs its
     /// own asynchronous prompt before AppKit receives a termination reply.
     func confirmTermination(_ completion: @escaping (Bool) -> Void) {
-        guard projectController.isDirty else {
+        // Closing the last window can immediately trigger application termination. Reuse the
+        // accepted close decision even when Don't Save deliberately leaves the project dirty.
+        guard !terminationWasApproved, projectController.isDirty else {
             terminationWasApproved = true
             completion(true)
             return

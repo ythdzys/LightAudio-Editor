@@ -3,6 +3,80 @@ import AVFoundation
 @testable import LightAudio_Editor
 
 final class P2RegressionTests: XCTestCase {
+    func testDontSaveApprovalDoesNotPromptAgainOnTerminationOrClose() throws {
+        let recoveryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LightAudio-Quit-\(UUID().uuidString)", isDirectory: true)
+        let recoveryService = AutosaveRecoveryService(recoveryDirectory: recoveryDirectory)
+        let projectController = ProjectController(recoveryService: recoveryService)
+        let controller = MainWindowController(projectController: projectController)
+        let window = try XCTUnwrap(controller.window)
+        defer {
+            window.delegate = nil
+            window.close()
+            recoveryService.stop()
+            try? FileManager.default.removeItem(at: recoveryDirectory)
+        }
+        projectController.addTrack()
+        XCTAssertTrue(controller.hasUnsavedChanges)
+
+        let replied = expectation(description: "Don't Save approves quit")
+        controller.confirmTermination { shouldTerminate in
+            XCTAssertTrue(shouldTerminate)
+            replied.fulfill()
+        }
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        window.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+        wait(for: [replied], timeout: 3)
+        XCTAssertTrue(controller.hasUnsavedChanges, "Discard approval must not mark unsaved work as saved")
+
+        var terminationReply: Bool?
+        controller.confirmTermination { terminationReply = $0 }
+        XCTAssertEqual(terminationReply, true, "The accepted close decision must also approve termination")
+        XCTAssertNil(window.attachedSheet, "Don't Save must not present a second prompt")
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertThirdButtonReturn) }
+        XCTAssertTrue(controller.windowShouldClose(window))
+    }
+
+    func testCancelQuitStillPromptsOnNextQuitAttempt() throws {
+        let recoveryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LightAudio-QuitCancel-\(UUID().uuidString)", isDirectory: true)
+        let recoveryService = AutosaveRecoveryService(recoveryDirectory: recoveryDirectory)
+        let projectController = ProjectController(recoveryService: recoveryService)
+        let controller = MainWindowController(projectController: projectController)
+        let window = try XCTUnwrap(controller.window)
+        defer {
+            window.delegate = nil
+            window.close()
+            recoveryService.stop()
+            try? FileManager.default.removeItem(at: recoveryDirectory)
+        }
+        projectController.addTrack()
+
+        let cancelled = expectation(description: "Cancel rejects quit")
+        controller.confirmTermination { shouldTerminate in
+            XCTAssertFalse(shouldTerminate)
+            cancelled.fulfill()
+        }
+        let cancelledSheet = try XCTUnwrap(window.attachedSheet)
+        window.endSheet(cancelledSheet, returnCode: .alertThirdButtonReturn)
+        wait(for: [cancelled], timeout: 3)
+
+        let replied = expectation(description: "Quit prompt responds to Don't Save")
+        controller.confirmTermination { shouldTerminate in
+            XCTAssertTrue(shouldTerminate)
+            replied.fulfill()
+        }
+        let sheet = try XCTUnwrap(window.attachedSheet, "Cancel must not approve a later quit")
+        window.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+        wait(for: [replied], timeout: 3)
+
+        var repeatedReply: Bool?
+        controller.confirmTermination { repeatedReply = $0 }
+        XCTAssertEqual(repeatedReply, true)
+        XCTAssertNil(window.attachedSheet)
+        XCTAssertTrue(controller.windowShouldClose(window))
+    }
+
     func testSystemLanguageResolutionSupportsSimplifiedChineseLocales() {
         XCTAssertEqual(
             AppLanguage.resolvedIdentifier(preference: .system, preferredLanguages: ["zh-Hans-AU"]),

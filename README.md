@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.3"><strong>Download Beta 3</strong></a>
+  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.4"><strong>Download Beta 4</strong></a>
   &nbsp;|&nbsp;
   <a href="https://github.com/ythdzys/LightAudio-Editor/issues/new/choose">Report an issue</a>
   &nbsp;|&nbsp;
@@ -32,8 +32,8 @@ LightAudio Editor provides a timeline-oriented workflow for importing, arranging
 
 ## Download and Install
 
-1. Open the [Beta 3 release](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.3).
-2. Download `LightAudio-Editor-0.1.1-beta-3-ADHOC-UNNOTARIZED.zip`.
+1. Open the [Beta 4 release](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.4).
+2. Download `LightAudio-Editor-0.1.1-beta-4-ADHOC-UNNOTARIZED.zip`.
 3. Extract the ZIP and move **LightAudio Editor.app** to `/Applications`.
 4. Try to open the app once. If macOS blocks it, approve it under:
    - macOS Ventura and later: **System Settings > Privacy & Security > Open Anyway**
@@ -174,7 +174,7 @@ xcodebuild \
   test
 ```
 
-The current suite contains 61 tests covering project validation, localization, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, and real bundled M4A/MP3/FLAC exports.
+The current suite contains 63 tests covering project validation, localization, save prompts, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, and real bundled M4A/MP3/FLAC exports.
 
 ## Repository Layout
 
