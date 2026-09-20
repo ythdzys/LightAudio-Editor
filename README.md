@@ -5,6 +5,10 @@
 <h1 align="center">LightAudio Editor</h1>
 
 <p align="center">
+  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
   A lightweight, native multitrack audio editor for macOS.<br>
   Built with Swift, AppKit, AVFoundation, and AVFAudio.
 </p>
