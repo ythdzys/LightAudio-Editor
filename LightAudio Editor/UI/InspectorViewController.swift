@@ -11,6 +11,7 @@ final class InspectorViewController: NSViewController {
     var onColorChanged: ((ClipColorLabel) -> Void)?
     var onAddVolumeKeyframe: (() -> Void)?
     var onClearVolumeAutomation: (() -> Void)?
+    var onPanAutomation: (() -> Void)?
     var onNormalizeClip: (() -> Void)?
     var onBeginContinuousEdit: ((String) -> Void)?
     var onEndContinuousEdit: (() -> Void)?
@@ -37,6 +38,7 @@ final class InspectorViewController: NSViewController {
     private let automationSummaryLabel = NSTextField(labelWithString: L10n.tr("Volume keyframes: 0"))
     private let addKeyframeButton = NSButton(title: L10n.tr("Add keyframe"), target: nil, action: nil)
     private let clearAutomationButton = NSButton(title: L10n.tr("Clear automation"), target: nil, action: nil)
+    private let panAutomationButton = NSButton(title: L10n.tr("Clip Pan Automation..."), target: nil, action: nil)
     private let normalizeButton = NSButton(title: L10n.tr("Normalize Clip..."), target: nil, action: nil)
     private let gainSlider = ContinuousSlider(value: 0, minValue: -60, maxValue: 12, target: nil, action: nil)
     private let panSlider = ContinuousSlider(value: 0, minValue: -100, maxValue: 100, target: nil, action: nil)
@@ -182,6 +184,8 @@ final class InspectorViewController: NSViewController {
         fadesSection.contentStack.addArrangedSubview(fadeOutCurveRow)
         automationSection.contentStack.addArrangedSubview(automationSummaryLabel)
         automationSection.contentStack.addArrangedSubview(automationButtons)
+        panAutomationButton.target = self; panAutomationButton.action = #selector(editPanAutomation)
+        automationSection.contentStack.addArrangedSubview(panAutomationButton)
         processingSection.contentStack.addArrangedSubview(normalizeButton)
     }
 
@@ -455,6 +459,8 @@ final class InspectorViewController: NSViewController {
         onAddVolumeKeyframe?()
     }
 
+    @objc private func editPanAutomation() { onPanAutomation?() }
+
     @objc private func clearVolumeAutomation() {
         onClearVolumeAutomation?()
     }
@@ -500,7 +506,7 @@ final class InspectorViewController: NSViewController {
     }
 
     private func setAutomationButtonsEnabled(_ enabled: Bool) {
-        [addKeyframeButton, clearAutomationButton, normalizeButton].forEach { $0.isEnabled = enabled }
+        [addKeyframeButton, clearAutomationButton, normalizeButton, panAutomationButton].forEach { $0.isEnabled = enabled }
     }
 }
 

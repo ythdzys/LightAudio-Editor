@@ -48,6 +48,11 @@
 		BF0000010000000000000029 /* NOTICE in Resources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001029 /* NOTICE */; };
 		BF000001000000000000002A /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000102A /* Localization.swift */; };
 		BF000001000000000000002B /* Localization in Resources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000102B /* Localization */; };
+		BF000001000000000000002C /* MediaPortabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000102C /* MediaPortabilityTests.swift */; };
+		BF000001000000000000002D /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000102D /* Fixtures */; };
+		BF000001000000000000002E /* MediaPreparationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000102E; };
+		BF000001000000000000002F /* AutomationEditorController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF000001000000000000102F; };
+		BF0000010000000000000030 /* PlatformParityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF0000010000000000001030; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -95,6 +100,11 @@
 		BF0000010000000000001029 /* NOTICE */ = {isa = PBXFileReference; lastKnownFileType = text; path = NOTICE; sourceTree = SOURCE_ROOT; };
 		BF000001000000000000102A /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities/Localization.swift; sourceTree = "<group>"; };
 		BF000001000000000000102B /* Localization */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Localization; sourceTree = "<group>"; };
+		BF000001000000000000102C /* MediaPortabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPortabilityTests.swift; sourceTree = "<group>"; };
+		BF000001000000000000102D /* Fixtures */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Fixtures; sourceTree = "<group>"; };
+		BF000001000000000000102E /* MediaPreparationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Services/MediaPreparationScheduler.swift"; sourceTree = "<group>"; };
+		BF000001000000000000102F /* AutomationEditorController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UI/AutomationEditorController.swift"; sourceTree = "<group>"; };
+		BF0000010000000000001030 /* PlatformParityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlatformParityTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -128,6 +138,9 @@
 			isa = PBXGroup;
 			children = (
 				BF0000010000000000001026 /* P2RegressionTests.swift */,
+				BF0000010000000000001030 /* PlatformParityTests.swift */,
+				BF000001000000000000102C /* MediaPortabilityTests.swift */,
+				BF000001000000000000102D /* Fixtures */,
 			);
 			path = "LightAudio EditorTests";
 			sourceTree = "<group>";
@@ -178,6 +191,8 @@
 				BF000001000000000000101E /* ExportProgressController.swift */,
 				BF000001000000000000101F /* WaveformData.swift */,
 				BF0000010000000000001020 /* WaveformCacheService.swift */,
+				BF000001000000000000102F /* AutomationEditorController.swift */,
+				BF000001000000000000102E /* MediaPreparationScheduler.swift */,
 				BF0000010000000000001021 /* MediaProxyService.swift */,
 				BF0000010000000000001022 /* ExternalEncoderSettings.swift */,
 				BF0000010000000000001023 /* PreferencesWindowController.swift */,
@@ -210,6 +225,7 @@
 			buildConfigurationList = BF0000010000000000008002 /* Build configuration list for PBXNativeTarget "LightAudio EditorTests" */;
 			buildPhases = (
 				BF0000010000000000003005 /* Sources */,
+				BF0000010000000000003006 /* Test Resources */,
 				BF0000010000000000003004 /* Frameworks */,
 			);
 			buildRules = ();
@@ -256,6 +272,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BF0000010000000000003006 /* Test Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (BF000001000000000000002D /* Fixtures in Resources */); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -293,6 +310,8 @@
 				BF000001000000000000001E /* ExportProgressController.swift in Sources */,
 				BF000001000000000000001F /* WaveformData.swift in Sources */,
 				BF0000010000000000000020 /* WaveformCacheService.swift in Sources */,
+				BF000001000000000000002F /* AutomationEditorController.swift in Sources */,
+				BF000001000000000000002E /* MediaPreparationScheduler.swift in Sources */,
 				BF0000010000000000000021 /* MediaProxyService.swift in Sources */,
 				BF0000010000000000000022 /* ExternalEncoderSettings.swift in Sources */,
 				BF0000010000000000000023 /* PreferencesWindowController.swift in Sources */,
@@ -306,6 +325,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				BF0000010000000000000026 /* P2RegressionTests.swift in Sources */,
+				BF0000010000000000000030 /* PlatformParityTests.swift in Sources */,
+				BF000001000000000000002C /* MediaPortabilityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

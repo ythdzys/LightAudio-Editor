@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-20",
+  "platform": "Local Mac mini, arm64, macOS 15.7.9, Xcode 26.3",
+  "runs": {
+    "full": {
+      "passedTests": 88,
+      "failedTests": 2,
+      "skippedTests": 0,
+      "totalTestCount": 90
+    },
+    "recheck": {
+      "passedTests": 4,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 4
+    }
+  },
+  "changed_since_full_run": [
+    "LightAudio EditorTests/P2RegressionTests.swift",
+    "LightAudio EditorTests/MediaPortabilityTests.swift"
+  ],
+  "application_source_unchanged_since_full_run": true,
+  "outstanding_test_failures": 0,
+  "resolved_failures": [
+    "Three-channel synthetic fixture now declares MPEG 3.0 layout. Native 96 kHz samples and retimed audio pass with unchanged application decoding.",
+    "Source-modification test now replaces actual audio samples. Identical bytes with a changed timestamp are intentionally accepted, matching iPad behavior; separate timestamp-only and changed-tail checks pass."
+  ],
+  "verified": [
+    "Default-on AppKit collection checkbox and toggling off",
+    "Lossless audio-only and original-video project collection",
+    "Unused library media, duplicate names, relative links, reopening a moved collection after deleting original sources and proxy cache",
+    "Exact rendered samples, asset/clip IDs, trims and edits",
+    "Cancellation, failed decoding, source changes and partial-output cleanup",
+    "Individual and recursive-folder relinking, Undo/Redo, save/reopen, exact rendered-sample comparisons",
+    "WAV, AIFF, AIF, CAF, FLAC, MP3, AAC, M4A AAC/ALAC, MOV, MP4, M4V; conditional AVI/MKV decoder acceptance or safe rejection",
+    "Full-file fingerprints, legacy confirmation, one-frame-short rejection, changed replacements after review",
+    "All five export formats reject invalid source coverage before creating output"
+  ],
+  "limitations": [
+    "Executed on this Mac only; macOS 10.15 and Intel runtime behavior was not tested.",
+    "AVI/MKV support depends on the native decoder; conditional rejection is not proof of decode support.",
+    "macOS remains project format v1; newer iPad v2/v3 editing features and project versions were not ported.",
+    "Cold-open/refresh source verification remains synchronous on macOS; the separate iPad asynchronous verification subsystem was not ported.",
+    "The full 90-test selection was not repeated after test-only fixes. Application sources are unchanged, with 88 passes in the full run and both initially failing tests passing in the four-test recheck."
+  ],
+  "run_directory": "/private/tmp/lae-macos-media-audit",
+  "final_source_manifest": {
+    "LightAudio Editor/UI/MediaBinViewController.swift": "daa605e517ff1c68f3ba094c8ecb52b011b045932f789a0fdf7d97c0184da48d",
+    "LightAudio Editor/UI/ExportProgressController.swift": "6c3bc92e0f292cb065c0c73be1e5e543b8385955718faa3217212b40c05d02ee",
+    "LightAudio Editor/UI/PreferencesWindowController.swift": "7725fcf97ae2cdacf72e44fb29bf8d5ee0d827bd914b9f670b5c90b5c75eb5d0",
+    "LightAudio Editor/UI/RecoveryPromptController.swift": "23725a79c0d075fed5cb3ee01d8e5a29e5ffffbf7325989e8f76ce5631579586",
+    "LightAudio Editor/UI/TimelineView.swift": "d5903defd4f1bae11d6f019d4ef45edcd511e66e21c3ce681671e5aa349c11e8",
+    "LightAudio Editor/UI/InspectorViewController.swift": "664b9c70b6ed65638369004fd703e74ce7362fe1e7cb64d678cf8cbac36647da",
+    "LightAudio Editor/UI/ExportPanelController.swift": "9a99ebf5fa8864de88f250ff14be6983e3384ef3553d47bd5ae8dda68629cdd5",
+    "LightAudio Editor/UI/MissingMediaDialogController.swift": "366e3291d7aee6f734962e939c9852e5855c105839708e7f9c1712f20aa20dc9",
+    "LightAudio Editor/App/CrashRecoveryController.swift": "bdb1cbb7b3c3f7389fb74f559326167fbe3a90bb514b6e23e839b9c2039c4702",
+    "LightAudio Editor/App/MainWindowController.swift": "47e2ebac361453ff013e2aea55551c5290ad19b270daff46e91698466c27290e",
+    "LightAudio Editor/App/ProjectController.swift": "81486b975ce7d18d26be0e8cb95081d3b6cfa11123b2d6f7d09036f4b070c02a",
+    "LightAudio Editor/App/AppDelegate.swift": "333fd0703c9beb02c810e329be33c0263f384e81efd182db9af6d84562c6d2e1",
+    "LightAudio Editor/App/main.swift": "02e79e8bb55fead7cbf2c5bc7578161ca2ec4fb279d0a7f358be3ae208d486b6",
+    "LightAudio Editor/Models/MediaAsset.swift": "e7140aa7e03a236d036eceb5cd00f7e0a38ff8a7eea3e9468b16c9c5f1060ae9",
+    "LightAudio Editor/Models/WaveformData.swift": "b784e33eadcbb0eb4ea05f289ebf140ba63685e6763f83ac64dfa3ee06f1a223",
+    "LightAudio Editor/Models/Timeline.swift": "5116089601d9be8c09e12dd14932f99f5fd2f3bf9d1a3ce6155f100c7ddf5a34",
+    "LightAudio Editor/Models/Project.swift": "d1890e131878262fae4864c6e24ff6eebe3a9654392c6425cd8ea0ad349cd524",
+    "LightAudio Editor/Models/ExportSettings.swift": "2471e8f699cffc06ff14246ee8a7ad9bfba1bac684a1c2ce2c23f53f8fca65b6",
+    "LightAudio Editor/Utilities/Localization.swift": "2657d7b07081e254b470fb16a2d422196d6581b3c1417601766c5b640f29e522",
+    "LightAudio Editor/Utilities/Timecode.swift": "47d2d17bf67298021fb565a892eceaccb17b36dda5826741edfe82d1d0c5f37a",
+    "LightAudio Editor/Utilities/AudioFormatHelpers.swift": "a0b80c4bf279900bc6b9dfc75af14efc3181e8b4c5010a5a1d95bd0a708bc5e4",
+    "LightAudio Editor/Utilities/FileMetadataHasher.swift": "c5ac03303bd9a42bc77b3a456222aca9c2b449a6592c445bcf2e078dd8c459ae",
+    "LightAudio Editor/Services/ExternalEncoderSettings.swift": "3163aa344b8919f0e9d36a33d388e9439d422dcf2a2b97b7afd9971f731e05eb",
+    "LightAudio Editor/Services/ExportService.swift": "330e8f7aa1f64c701ab4fa351bfd416e15d11f7e48e78d7aa92d1e45b458fe5d",
+    "LightAudio Editor/Services/ApplicationCacheService.swift": "45824cba206aec3f13ca0fec57906b62aef9745330077a468850c4aeaa94500b",
+    "LightAudio Editor/Services/AudioPlaybackEngine.swift": "8d6f6238b48b2ef75ced78e3a5e872fe6071fa9007e158d96edd520ed6e05299",
+    "LightAudio Editor/Services/MediaProxyService.swift": "7aa14534588780fc1c423b542226bb33475591d85fd18fb569559ea38a7d4b76",
+    "LightAudio Editor/Services/TimelineRenderService.swift": "212f50c7fd06189b9470f7acfa76475c996c5e3162fc382b40fad7bb6e1ff18d",
+    "LightAudio Editor/Services/WaveformCacheService.swift": "1beffd62d4aeec7aa2339ba9f7319ea3ce2524b4e97b9600307e18e8c54505c0",
+    "LightAudio Editor/Services/MediaImportService.swift": "ea6f8f3cc35091163b56af8cba8a484dcd86d2533d44e81263f54cf59b4f078e",
+    "LightAudio Editor/Services/WaveformAnalysisService.swift": "12263d5c51a5eb9313a0d3ae3e0164bdb4abb20faccf8a009a0f7230122189a8",
+    "LightAudio Editor/Services/AutosaveRecoveryService.swift": "1f366ce6392dfdb201dda842cb7cc66b8cfd3827b8ac6c9ce5f5676ced1800b5",
+    "LightAudio Editor/Services/MediaRelinkService.swift": "917010e19b297343adbebf97ef90b41df4ad1da6f7ab104a098bc9276518b4a4",
+    "LightAudio Editor/Services/ProjectFileService.swift": "ea1f63e3f5a235045939dab3a0cf0c897a74957802d2eabb157afb98c80b266b",
+    "LightAudio Editor/Services/FileReferenceResolver.swift": "8d2d876c03f8f3ef2db750de8cf4d64b53cea3b9358aef84d829b408f7b7c187",
+    "LightAudio EditorTests/P2RegressionTests.swift": "5727bb7d22d6fc8ff54cdbfea09891d679c5bda31952b5a673c5a566e933cfe6",
+    "LightAudio EditorTests/MediaPortabilityTests.swift": "4d9e73a8096184d7235881705d3b79379033a76ae238f5a8ce734bfe5fa2e2e5",
+    "LightAudio EditorTests/Fixtures/relink-pcm.avi": "de74b5391971fa2b82aca7a6e03bf7827034e2b46cf22c8164d8fd558468efef",
+    "LightAudio EditorTests/Fixtures/silent.mov": "8eb5dd6706e1ce9052cd4af64fd2b48001bdcee41e06b4176128394f9c5033bf",
+    "LightAudio EditorTests/Fixtures/vbr-duration-underestimated.mp3": "170f7cda2a476be08ac9a6c734dbe66387424e5e2a7f696b8945d5825a0e8e50",
+    "LightAudio EditorTests/Fixtures/with-audio.mov": "3ac3b0282508d5c6727c1172d177db5bffc06dccfefaf1c11da964d3dbfb5465",
+    "LightAudio EditorTests/Fixtures/raw-aac-tail-marker.aac": "755ae7480fb8e3a6e921ec006dee7d0e6fc570a6b71dacb6ce6af920bd786cf2",
+    "LightAudio EditorTests/Fixtures/relink-pcm.mkv": "ed426885e6025bc19d73f14302aeff9b3e9e59ba9ef9b33c99b09c3d162c82f9",
+    "LightAudio Editor.xcodeproj/project.pbxproj": "96ee233133d16fbc3a839599e84799de3dcb162d79eb00a7f9712e7d3fd1de0b",
+    "LightAudio Editor/Resources/Localization/zh-Hans.json": "6528cd66191fe001304bbb9bace26b0b798054209165f5f1e58cc4257663195a"
+  }
+}

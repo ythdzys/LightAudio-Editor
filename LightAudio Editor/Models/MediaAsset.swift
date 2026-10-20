@@ -41,14 +41,24 @@ struct MediaAsset: Codable, Identifiable {
     var proxyCacheKey: String?
     var proxyStatus: ProxyStatus = .none
     var proxyFailureReason: String?
+    /// Transient: content has not yet been checked; unavailable until verification completes.
+    var isVerifyingSource: Bool = false
+    /// Transient diagnostic for an unreadable or concurrently changed source.
+    var sourceVerificationFailure: String?
     var isMissing: Bool = false
 
     var resolvedURL: URL? {
         URL(fileURLWithPath: resolvedPath ?? originalPath)
     }
 
+    /// M4A edit lists need the same container-aware decode as movie audio. This is
+    /// derived from the source, so older projects also prepare instead of using raw packets.
+    var requiresAudioPreparation: Bool {
+        kind == .videoAudio || AudioFormatHelpers.requiresContainerAudioDecode(URL(fileURLWithPath: originalPath).pathExtension)
+    }
+
     var audioSourceURL: URL? {
-        if kind == .videoAudio {
+        if requiresAudioPreparation {
             guard proxyStatus == .ready, let proxyPath = proxyPath else { return nil }
             return URL(fileURLWithPath: proxyPath)
         }
@@ -110,12 +120,12 @@ struct MediaAsset: Codable, Identifiable {
         waveformFailureReason = try container.decodeIfPresent(String.self, forKey: .waveformFailureReason)
         proxyPath = try container.decodeIfPresent(String.self, forKey: .proxyPath)
         proxyCacheKey = try container.decodeIfPresent(String.self, forKey: .proxyCacheKey)
-        proxyStatus = try container.decodeIfPresent(ProxyStatus.self, forKey: .proxyStatus) ?? (kind == .videoAudio ? .missing : .none)
+        proxyStatus = try container.decodeIfPresent(ProxyStatus.self, forKey: .proxyStatus) ?? (kind == .videoAudio || AudioFormatHelpers.requiresContainerAudioDecode(URL(fileURLWithPath: originalPath).pathExtension) ? .missing : .none)
         proxyFailureReason = try container.decodeIfPresent(String.self, forKey: .proxyFailureReason)
         isMissing = try container.decodeIfPresent(Bool.self, forKey: .isMissing) ?? false
         if isMissing {
             waveformStatus = .missing
-            if kind == .videoAudio {
+            if requiresAudioPreparation {
                 proxyStatus = .missing
             }
         }

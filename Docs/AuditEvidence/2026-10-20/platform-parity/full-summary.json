@@ -1,0 +1,90 @@
+{
+  "devicesAndConfigurations": [
+    {
+      "device": {
+        "architecture": "arm64",
+        "deviceName": "My Mac",
+        "modelName": "Mac mini",
+        "osBuildNumber": "24G830",
+        "osVersion": "15.7.9",
+        "platform": "macOS"
+      },
+      "expectedFailures": 0,
+      "failedTests": 6,
+      "passedTests": 102,
+      "skippedTests": 0,
+      "testPlanConfiguration": {
+        "configurationId": "1",
+        "configurationName": "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription": "LightAudio Editor · Built with macOS 15.7.9",
+  "expectedFailures": 0,
+  "failedTests": 6,
+  "finishTime": 1792484696.227,
+  "passedTests": 102,
+  "result": "Failed",
+  "skippedTests": 0,
+  "startTime": 1792484564.88,
+  "statistics": [],
+  "testFailures": [
+    {
+      "failureText": "Crash: LightAudio Editor at implicit closure #13 in PlatformParityTests.testIndependentCopyOwnsUnusedMediaAndGetsNewIdentity()",
+      "targetName": "LightAudio EditorTests",
+      "testIdentifier": 98,
+      "testIdentifierString": "PlatformParityTests/testIndependentCopyOwnsUnusedMediaAndGetsNewIdentity()",
+      "testIdentifierURL": "test://com.apple.xcode/LightAudio%20Editor/LightAudio%20EditorTests/PlatformParityTests/testIndependentCopyOwnsUnusedMediaAndGetsNewIdentity",
+      "testName": "testIndependentCopyOwnsUnusedMediaAndGetsNewIdentity()"
+    },
+    {
+      "failureText": "Crash: LightAudio Editor at implicit closure #3 in PlatformParityTests.testMinimumNormalizationAndCancellationPreserveSamplesAndUndo()",
+      "targetName": "LightAudio EditorTests",
+      "testIdentifier": 102,
+      "testIdentifierString": "PlatformParityTests/testMinimumNormalizationAndCancellationPreserveSamplesAndUndo()",
+      "testIdentifierURL": "test://com.apple.xcode/LightAudio%20Editor/LightAudio%20EditorTests/PlatformParityTests/testMinimumNormalizationAndCancellationPreserveSamplesAndUndo",
+      "testName": "testMinimumNormalizationAndCancellationPreserveSamplesAndUndo()"
+    },
+    {
+      "failureText": "XCTUnwrap failed: expected non-nil value of type \"(URL, ProjectRecoverySnapshot)\"",
+      "targetName": "LightAudio EditorTests",
+      "testIdentifier": 60,
+      "testIdentifierString": "P2RegressionTests/testPendingRecoverySnapshotSurvivesASecondCleanShutdown()",
+      "testIdentifierURL": "test://com.apple.xcode/LightAudio%20Editor/LightAudio%20EditorTests/P2RegressionTests/testPendingRecoverySnapshotSurvivesASecondCleanShutdown",
+      "testName": "testPendingRecoverySnapshotSurvivesASecondCleanShutdown()"
+    },
+    {
+      "failureText": "failed: caught error: \"Error Domain=NSCocoaErrorDomain Code=4 \"未能移除“LightAudio-Invalid-ADDCD4EB-192A-410A-9513-22824DE1075B.liau”。\" UserInfo={NSUserStringVariant=(\n    Remove\n), NSFilePath=/var/folders/_c/j0j62kg53457tv2q_41b0hth0000gn/T/LightAudio-Invalid-ADDCD4EB-192A-410A-9513-22824DE1075B.liau, NSURL=file:///var/folders/_c/j0j62kg53457tv2q_41b0hth0000gn/T/LightAudio-Invalid-ADDCD4EB-192A-410A-9513-22824DE1075B.liau, NSUnderlyingError=0x600003a3a880 {Error Domain=NSPOSIXErrorDomain Code=2 \"No such file or directory\"}}\"",
+      "targetName": "LightAudio EditorTests",
+      "testIdentifier": 63,
+      "testIdentifierString": "P2RegressionTests/testProjectLoadRejectsTrimOutsideSourceDuration()",
+      "testIdentifierURL": "test://com.apple.xcode/LightAudio%20Editor/LightAudio%20EditorTests/P2RegressionTests/testProjectLoadRejectsTrimOutsideSourceDuration",
+      "testName": "testProjectLoadRejectsTrimOutsideSourceDuration()"
+    },
+    {
+      "failureText": "XCTAssertNil failed: \"(file:///private/var/folders/_c/j0j62kg53457tv2q_41b0hth0000gn/T/LightAudio-Recovery-5045BF71-619C-40F9-B7EF-32C8736BEE1B/Recovery/16E5BB20-F9FB-477A-81A4-E933AD7F2510.recovery.json, LightAudio_Editor.ProjectRecoverySnapshot(id: 7C1B433C-7338-467F-9131-2E078A056438, createdAt: 2026-10-20 08:23:09 +0000, sessionID: Optional(F75D6E2A-6C15-410E-B265-F5AA3477C806), originalProjectURL: Optional(file:///var/folders/_c/j0j62kg53457tv2q_41b0hth0000gn/T/LightAudio-Recovery-5045BF71-619C-40F9-B7EF-32C8736BEE1B/Saved.liau), project: LightAudio_Editor.Project(formatVersion: 1, id: 16E5BB20-F9FB-477A-81A4-E933AD7F2510, name: \"Old Project\", sampleRate: 44100.0, duration: 0.0, assets: [], timeline: LightAudio_Editor.Timeline(tracks: [LightAudio_Editor.Track(id: C1B48ADF-F293-4E30-9E4A-E58CF0960378, name: \"A1\", isMuted: false, isSolo: false, isLocked: false, volumeDB: 0.0, pan: 0.0, isCollapsed: false, volumeAutomationKeyframes: [], clips: [])], markers: [], crossfades: []), mixState: LightAudio_Editor.MixState(masterVolumeDB: 0.0), viewState: LightAudio_Editor.TimelineViewState(zoom: 80.0, horizontalScroll: 0.0, snappingEnabled: true, followPlayhead: false, inPoint: nil, outPoint: nil, loopRangeEnabled: false, trackHeight: 86.0), lastSavedAt: nil), wasDirty: true, savedProjectModificationDate: Optional(2026-10-20 08:23:09 +0000)))\"",
+      "targetName": "LightAudio EditorTests",
+      "testIdentifier": 68,
+      "testIdentifierString": "P2RegressionTests/testRecoveryIgnoresSnapshotFromEarlierSession()",
+      "testIdentifierURL": "test://com.apple.xcode/LightAudio%20Editor/LightAudio%20EditorTests/P2RegressionTests/testRecoveryIgnoresSnapshotFromEarlierSession",
+      "testName": "testRecoveryIgnoresSnapshotFromEarlierSession()"
+    },
+    {
+      "failureText": "XCTAssertNotNil failed",
+      "targetName": "LightAudio EditorTests",
+      "testIdentifier": 70,
+      "testIdentifierString": "P2RegressionTests/testRecoverySessionResumesAfterRecoveryCacheClear()",
+      "testIdentifierURL": "test://com.apple.xcode/LightAudio%20Editor/LightAudio%20EditorTests/P2RegressionTests/testRecoverySessionResumesAfterRecoveryCacheClear",
+      "testName": "testRecoverySessionResumesAfterRecoveryCacheClear()"
+    }
+  ],
+  "title": "Test - LightAudio Editor",
+  "topInsights": [
+    {
+      "category": "Longest Test Runs",
+      "impact": "37% of duration",
+      "text": "1 longest test run with outlier durations exceeding 5.78s (three standard deviations)"
+    }
+  ],
+  "totalTestCount": 108
+}

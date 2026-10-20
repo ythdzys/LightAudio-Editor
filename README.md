@@ -76,13 +76,13 @@ Both architectures ship in one Universal app. Apple silicon begins with macOS Bi
 - Automatic track creation when media is dropped below existing tracks
 - Snapping to grid, playhead, markers, and clip edges
 - In/Out points, markers, loop playback, follow-playhead, zoom to fit, and smooth trackpad zoom
-- Linear, equal-power, ease-in, and ease-out fades plus explicit crossfades
-- Clip volume automation envelopes with editable keyframes
+- Linear, equal-power, ease-in, and ease-out fades plus explicit crossfades; splits retain their original curves
+- Clip volume automation envelopes, plus graph and numeric editors for clip pan and track volume automation
 - Undo/redo, dirty-state indicators, save prompts, crash recovery, and context menus
 
 ### Playback and Mixing
 
-- Multitrack playback from the current playhead with smooth seeking
+- Multitrack playback from the current playhead with smooth seeking and continuous, sample-aligned looping
 - Clip gain, pan, fades, automation, track volume/pan, mute, solo, and master gain
 - Per-track and master meters with clipping feedback
 - Missing or failed media is never silently ignored: editing, playback, and export remain blocked until it is resolved
@@ -94,7 +94,9 @@ Both architectures ship in one Universal app. Apple silicon begins with macOS Bi
 | WAV, AIFF | Native offline renderer |
 | M4A/AAC, MP3, FLAC | Bundled Universal FFmpeg/LAME helper |
 
-Export supports the entire project or the current In/Out range, mono or stereo output, selectable sample rates, compressed bitrates, progress, cancellation, and clipping detection. MP3 uses LAME-compatible sample rates up to 48 kHz. Exported audio includes trims, fades, crossfades, automation, clip/track mix controls, mute/solo state, and master gain.
+Export supports the entire project, the current In/Out range, or a custom numeric start/end range, mono or stereo output, selectable sample rates, compressed bitrates, progress, cancellation, and clipping detection. MP3 uses LAME-compatible sample rates up to 48 kHz. Exported audio includes trims, fades, crossfades, automation, clip/track mix controls, mute/solo state, and master gain.
+
+To edit clip pan automation, use **Clip Pan Automation** in the inspector or the clip context menu. For track volume automation, right-click the track header and choose **Track Volume Automation**. Click the graph to add points, drag to move them, or use the point list and numeric fields. Edits support Undo/Redo and respect locked tracks.
 
 ## Quick Start
 
@@ -110,9 +112,18 @@ Export supports the entire project or the current In/Out range, mono or stereo o
 `.liau` projects are readable JSON documents containing timeline structure, media references, mix settings, markers, view state, and automation. They do not embed source media, waveform arrays, or proxy audio.
 
 - Relative media paths are saved when possible.
-- **File > Collect Project Media** creates a portable project copy with a `Media/` folder.
-- Recovery is offered only when a saved project had unsaved work and the previous session ended unexpectedly.
+- **File > Save As** creates and opens an independent project folder containing all library media, with a new project identity and fresh Undo history. Ordinary **Save** keeps the current document and references.
+- Project formats 1–3 are supported on macOS and iPadOS. Files use the oldest required version: 2 for partial fades, 3 for partial crossfades, and 1 otherwise.
+- **Decide Later** retains crash recovery for **Project > Recover Interrupted Project**. Failed restores keep the snapshot for retry; cache clearing is blocked while recovery is pending.
+- M4A edit lists, gaps, retiming, and multiple audio tracks use the same container-aware preparation as video audio. Source verification and waveform/cache reads run in the background; waveform and proxy preparation share a two-job budget.
+- Importing byte-identical media from another path reuses its existing library entry.
+- **File > Collect Project Media** creates a portable project copy with a `Media/` folder, including unused library media.
+- **Audio only for video files** is enabled by default when collecting a project. It replaces videos in the exported copy with lossless float PCM `.caf` audio, preserving native sample rate, channels, timing, and edits. Savings depend on the source; disable it to include original videos.
+- Collection supports cancellation and removes incomplete output on failure. Move the entire collected folder to keep relative media links working.
+- Relinking verifies complete file fingerprints and existing clip bounds. Older projects without a full fingerprint require manual confirmation; folder relinking only accepts unambiguous matches.
+- Recovery is offered only when a saved project had unsaved work and an earlier session ended unexpectedly and its recovery remains unresolved.
 - Original source media is never modified by editing, normalization, proxy generation, or export.
+- Normalization supports cancellation and targets from −60 to 0 dBFS. Mono export folds down the panned stereo mix, including automation.
 - Export cannot overwrite imported source media or generated proxies.
 
 Generated caches are stored under:
@@ -178,7 +189,7 @@ xcodebuild \
   test
 ```
 
-The current suite contains 63 tests covering project validation, localization, save prompts, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, and real bundled M4A/MP3/FLAC exports.
+The regression suite covers portable audio-only/full-video collections, cancellation cleanup, decoded-sample comparisons, individual and recursive-folder relinking across supported media extensions, and project validation, localization, save prompts, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, and real bundled M4A/MP3/FLAC exports.
 
 ## Repository Layout
 

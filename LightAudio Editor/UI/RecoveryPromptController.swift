@@ -23,7 +23,7 @@ final class RecoveryPromptController {
         if canOpenLastSaved {
             alert.addButton(withTitle: L10n.tr("Open Last Saved Version"))
         }
-        alert.addButton(withTitle: L10n.tr("Cancel"))
+        alert.addButton(withTitle: L10n.tr("Decide Later"))
 
         let handleResponse: (NSApplication.ModalResponse) -> Void = { response in
             if response == .alertFirstButtonReturn {

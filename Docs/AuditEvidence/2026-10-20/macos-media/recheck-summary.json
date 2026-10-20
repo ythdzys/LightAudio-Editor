@@ -1,0 +1,35 @@
+{
+  "devicesAndConfigurations": [
+    {
+      "device": {
+        "architecture": "arm64",
+        "deviceName": "My Mac",
+        "modelName": "Mac mini",
+        "osBuildNumber": "24G830",
+        "osVersion": "15.7.9",
+        "platform": "macOS"
+      },
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "passedTests": 4,
+      "skippedTests": 0,
+      "testPlanConfiguration": {
+        "configurationId": "1",
+        "configurationName": "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription": "LightAudio Editor · Built with macOS 15.7.9",
+  "expectedFailures": 0,
+  "failedTests": 0,
+  "finishTime": 1792481898.624,
+  "passedTests": 4,
+  "result": "Passed",
+  "skippedTests": 0,
+  "startTime": 1792481892.186,
+  "statistics": [],
+  "testFailures": [],
+  "title": "Test - LightAudio Editor",
+  "topInsights": [],
+  "totalTestCount": 4
+}

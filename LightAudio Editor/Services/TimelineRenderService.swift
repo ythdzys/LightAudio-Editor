@@ -1,7 +1,21 @@
 import Foundation
 import AVFoundation
 
+/// Time arithmetic can put an exact sample boundary a few floating-point ulps away
+/// from its integer frame. Snap only that rounding noise before floor/ceiling.
+enum AudioFrameMath {
+    private static func snapped(_ value: Double) -> Double {
+        let nearest = value.rounded()
+        return abs(value - nearest) <= max(1e-7, 8 * value.ulp) ? nearest : value
+    }
+    static func ceiling(_ value: Double) -> Double { snapped(value).rounded(.up) }
+    static func floor(_ value: Double) -> Double { snapped(value).rounded(.down) }
+}
+
 final class TimelineRenderService {
+    func unavailableVideoProxyAssets(in project: Project) -> [MediaAsset] {
+        unavailableAudioProxyAssets(in: project)
+    }
     func activeClips(in project: Project) -> [(Track, Clip, MediaAsset)] {
         let soloed = project.timeline.tracks.contains { $0.isSolo }
         var result: [(Track, Clip, MediaAsset)] = []
@@ -18,10 +32,10 @@ final class TimelineRenderService {
     }
 
     /// Only proxies referenced by an audible timeline clip can prevent playback or export.
-    func unavailableVideoProxyAssets(in project: Project) -> [MediaAsset] {
+    func unavailableAudioProxyAssets(in project: Project) -> [MediaAsset] {
         let activeAssetIDs = Set(activeClips(in: project).map { $0.2.id })
         return project.assets.filter {
-            guard activeAssetIDs.contains($0.id), $0.kind == .videoAudio else { return false }
+            guard activeAssetIDs.contains($0.id), $0.requiresAudioPreparation else { return false }
             guard $0.proxyStatus == .ready, let proxyURL = $0.audioSourceURL else { return true }
             return !FileManager.default.fileExists(atPath: proxyURL.path)
         }
@@ -39,7 +53,6 @@ final class TimelineAudioSource {
         case leftSurround
         case rightSurround
         case centerSurround
-        case unknown
     }
 
     private struct DownmixCoefficients {
@@ -51,24 +64,16 @@ final class TimelineAudioSource {
         let converter: AVAudioConverter
         let inputBuffer: AVAudioPCMBuffer
         let outputFormat: AVAudioFormat
-        let sourceEndFrame: AVAudioFramePosition
         var remainingSourceFrames: AVAudioFramePosition
-        var nextSourceTime: TimeInterval
+        var nextOutputFrame: AVAudioFramePosition
 
-        init(
-            converter: AVAudioConverter,
-            inputBuffer: AVAudioPCMBuffer,
-            outputFormat: AVAudioFormat,
-            sourceEndFrame: AVAudioFramePosition,
-            remainingSourceFrames: AVAudioFramePosition,
-            nextSourceTime: TimeInterval
-        ) {
+        init(converter: AVAudioConverter, inputBuffer: AVAudioPCMBuffer, outputFormat: AVAudioFormat,
+             remainingSourceFrames: AVAudioFramePosition, nextOutputFrame: AVAudioFramePosition) {
             self.converter = converter
             self.inputBuffer = inputBuffer
             self.outputFormat = outputFormat
-            self.sourceEndFrame = sourceEndFrame
             self.remainingSourceFrames = remainingSourceFrames
-            self.nextSourceTime = nextSourceTime
+            self.nextOutputFrame = nextOutputFrame
         }
     }
 
@@ -77,16 +82,93 @@ final class TimelineAudioSource {
     private let sourceChannelCount: Int
     private let downmixCoefficients: DownmixCoefficients
     private var conversionState: ConversionState?
+    #if os(iOS)
+    private var flac: OpaquePointer?
+    private var flacPosition: AVAudioFramePosition = 0
+    private var flacSamples: [Float] = []
+    #endif
+
+    private var sourceFrameCount: AVAudioFramePosition {
+        #if os(iOS)
+        if let flac, la_flac_frame_count(flac) > 0 { return AVAudioFramePosition(la_flac_frame_count(flac)) }
+        #endif
+        return file.length
+    }
 
     init(url: URL) throws {
         file = try AVAudioFile(forReading: url)
         sourceSampleRate = file.processingFormat.sampleRate
         sourceChannelCount = Int(file.processingFormat.channelCount)
-        downmixCoefficients = Self.makeDownmixCoefficients(
+        downmixCoefficients = try Self.makeDownmixCoefficients(
             channelCount: sourceChannelCount,
-            layoutTag: file.processingFormat.channelLayout?.layoutTag
+            layout: file.processingFormat.channelLayout
         )
+        #if os(iOS)
+        // Use the same decoder as waveform analysis. AVAudioFile on iPadOS 27
+        // can reject valid FLAC final blocks, including during resampling.
+        if file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatFLAC {
+            guard let decoder = url.withUnsafeFileSystemRepresentation({ la_flac_open($0) }) else {
+                throw flacFailure("Could not open FLAC audio.")
+            }
+            flac = decoder
+            guard Int(la_flac_channels(decoder)) == sourceChannelCount,
+                  Double(la_flac_sample_rate(decoder)) == sourceSampleRate,
+                  file.processingFormat.commonFormat == .pcmFormatFloat32,
+                  !file.processingFormat.isInterleaved else {
+                throw flacFailure("The FLAC audio format is invalid.")
+            }
+        }
+        #endif
     }
+
+    deinit {
+        #if os(iOS)
+        if let flac { la_flac_close(flac) }
+        #endif
+    }
+
+    private func seek(to frame: AVAudioFramePosition) throws {
+        #if os(iOS)
+        if let flac {
+            guard flacPosition != frame else { return }
+            guard frame >= 0, la_flac_seek(flac, UInt64(frame)) != 0 else {
+                throw flacFailure("Could not seek in FLAC audio.")
+            }
+            flacPosition = frame
+            return
+        }
+        #endif
+        file.framePosition = frame
+    }
+
+    private func read(into buffer: AVAudioPCMBuffer, frameCount: AVAudioFrameCount) throws {
+        #if os(iOS)
+        if let flac {
+            let requested = min(Int(frameCount), Int(max(0, sourceFrameCount - flacPosition)))
+            guard let channels = buffer.floatChannelData else { throw flacFailure("The FLAC audio format is invalid.") }
+            let needed = requested * sourceChannelCount
+            if flacSamples.count < needed { flacSamples = [Float](repeating: 0, count: needed) }
+            let count = flacSamples.withUnsafeMutableBufferPointer {
+                Int(la_flac_read(flac, UInt64(requested), $0.baseAddress))
+            }
+            // Do not turn a genuinely truncated stream into a successful export.
+            guard count == requested else { throw flacFailure("FLAC audio ended before the requested samples were decoded.") }
+            buffer.frameLength = AVAudioFrameCount(count)
+            for frame in 0..<count {
+                for channel in 0..<sourceChannelCount { channels[channel][frame] = flacSamples[frame * sourceChannelCount + channel] }
+            }
+            flacPosition += AVAudioFramePosition(count)
+            return
+        }
+        #endif
+        try file.read(into: buffer, frameCount: frameCount)
+    }
+
+    #if os(iOS)
+    private func flacFailure(_ description: String) -> NSError {
+        NSError(domain: "LightAudioRender", code: 73, userInfo: [NSLocalizedDescriptionKey: L10n.tr(description)])
+    }
+    #endif
 
     func renderClip(
         clip: Clip,
@@ -140,10 +222,10 @@ final class TimelineAudioSource {
         guard destinationOffset < maximumDestinationFrame else { return }
 
         let sourceEndFrame = min(
-            file.length,
-            AVAudioFramePosition(ceil(max(0, clip.sourceEnd * sourceSampleRate)))
+            sourceFrameCount,
+            AVAudioFramePosition(AudioFrameMath.ceiling(max(0, clip.sourceEnd * sourceSampleRate)))
         )
-        let sourceStartFrame = AVAudioFramePosition(floor(max(0, sourceStartTime * sourceSampleRate)))
+        let sourceStartFrame = AVAudioFramePosition(AudioFrameMath.floor(max(0, sourceStartTime * sourceSampleRate)))
         guard sourceStartFrame < sourceEndFrame else { return }
 
         let requestedOutputFrames = AVAudioFrameCount(maximumDestinationFrame - destinationOffset)
@@ -182,41 +264,34 @@ final class TimelineAudioSource {
             let pan = MixMath.combinedPan(clipPan, track.pan)
             let destinationFrame = destinationOffset + outputFrame
 
-            if outputChannels == 1 {
-                let stereo = downmixedStereo(
-                    sourceData: sourceData,
-                    sourceChannels: sourceChannels,
-                    frame: outputFrame
-                )
-                destinationData[0][destinationFrame] += ((stereo.left + stereo.right) * 0.5) * gain
-                continue
-            }
-
+            let left: Float
+            let right: Float
             if sourceChannels == 1 {
                 let mono = sourceData[0][outputFrame]
                 let angle = (pan + 1) * Double.pi / 4
-                destinationData[0][destinationFrame] += mono * Float(cos(angle)) * gain
-                destinationData[1][destinationFrame] += mono * Float(sin(angle)) * gain
-                continue
+                left = mono * Float(cos(angle))
+                right = mono * Float(sin(angle))
+            } else {
+                let stereo = downmixedStereo(sourceData: sourceData, sourceChannels: sourceChannels, frame: outputFrame)
+                left = stereo.left * (pan > 0 ? Float(1 - pan) : 1)
+                right = stereo.right * (pan < 0 ? Float(1 + pan) : 1)
             }
-
-            var (left, right) = downmixedStereo(
-                sourceData: sourceData,
-                sourceChannels: sourceChannels,
-                frame: outputFrame
-            )
-            if pan > 0 {
-                left *= Float(1 - pan)
-            } else if pan < 0 {
-                right *= Float(1 + pan)
+            if outputChannels == 1 {
+                // Mono is the arithmetic fold-down of the same panned stereo mix used in playback.
+                destinationData[0][destinationFrame] += (left + right) * 0.5 * gain
+            } else {
+                destinationData[0][destinationFrame] += left * gain
+                destinationData[1][destinationFrame] += right * gain
             }
-            destinationData[0][destinationFrame] += left * gain
-            destinationData[1][destinationFrame] += right * gain
+            for channel in 0..<min(2, outputChannels) where !destinationData[channel][destinationFrame].isFinite {
+                destinationData[channel][destinationFrame] = 0
+            }
         }
     }
 
-    /// Each TimelineAudioSource belongs to one clip render stream. Sequential calls retain the
-    /// converter's fractional resampling phase; a seek or range jump creates a new stream.
+    /// Converters always start on a common source/output sample boundary with filter preroll.
+    /// Clip edges never truncate converter input: adjacent split clips must see the same history
+    /// and lookahead. The caller alone determines which timeline samples belong to the clip.
     private func decodedBuffer(
         fromSourceTime sourceStartTime: TimeInterval,
         from sourceStartFrame: AVAudioFramePosition,
@@ -224,112 +299,94 @@ final class TimelineAudioSource {
         outputSampleRate: Double,
         outputFrameCount: AVAudioFrameCount
     ) throws -> AVAudioPCMBuffer? {
-        guard outputFrameCount > 0,
-              sourceStartFrame < sourceEndFrame,
-              outputSampleRate > 0 else {
-            return nil
-        }
-
+        guard outputFrameCount > 0, sourceStartFrame < sourceEndFrame, outputSampleRate > 0 else { return nil }
         let sourceFormat = file.processingFormat
         if abs(sourceFormat.sampleRate - outputSampleRate) < 0.0001 {
             conversionState = nil
-            let frameCount = AVAudioFrameCount(min(
-                Int64(outputFrameCount),
-                max(0, sourceEndFrame - sourceStartFrame)
-            ))
-            guard frameCount > 0,
-                  let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else {
-                return nil
-            }
-            file.framePosition = sourceStartFrame
-            try file.read(into: buffer, frameCount: frameCount)
+            let count = AVAudioFrameCount(min(Int64(outputFrameCount), sourceFrameCount - sourceStartFrame))
+            guard count > 0, let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: count) else { return nil }
+            try seek(to: sourceStartFrame)
+            try read(into: buffer, frameCount: count)
+            Self.sanitize(buffer)
             return buffer
         }
 
-        guard let convertedFormat = conversionFormat(sampleRate: outputSampleRate, sourceFormat: sourceFormat),
-              let outputBuffer = AVAudioPCMBuffer(pcmFormat: convertedFormat, frameCapacity: outputFrameCount) else {
-            throw NSError(
-                domain: "LightAudioRender",
-                code: 70,
-                userInfo: [NSLocalizedDescriptionKey: L10n.tr("Could not create the requested audio conversion format.")]
-            )
+        guard let format = conversionFormat(sampleRate: outputSampleRate, sourceFormat: sourceFormat) else {
+            throw conversionFailure()
         }
-
-        let continuityTolerance = max(0.000_001, 0.25 / outputSampleRate)
-        let canContinue = conversionState.map {
-            abs($0.outputFormat.sampleRate - convertedFormat.sampleRate) < 0.0001 &&
-                $0.outputFormat.channelCount == convertedFormat.channelCount &&
-                $0.sourceEndFrame == sourceEndFrame &&
-                abs($0.nextSourceTime - sourceStartTime) <= continuityTolerance
-        } ?? false
-
-        if !canContinue {
-            guard let converter = AVAudioConverter(from: sourceFormat, to: convertedFormat) else {
-                throw NSError(
-                    domain: "LightAudioRender",
-                    code: 70,
-                    userInfo: [NSLocalizedDescriptionKey: L10n.tr("Could not create an audio sample-rate converter.")]
-                )
+        let targetFrame = AVAudioFramePosition(AudioFrameMath.floor(max(0, sourceStartTime * outputSampleRate)))
+        if conversionState?.outputFormat != format || conversionState?.nextOutputFrame != targetFrame {
+            guard let converter = AVAudioConverter(from: sourceFormat, to: format),
+                  let input = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: 16_384) else {
+                throw conversionFailure()
             }
-            let inputCapacity = AVAudioFrameCount(min(16_384, max(1, sourceEndFrame - sourceStartFrame)))
-            guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: inputCapacity) else {
-                return nil
+            // For integer sample rates the GCD gives an exact repeating phase boundary.
+            // Non-integral rates retain the same origin by decoding from zero in bounded chunks.
+            var anchorSource: Int64 = 0
+            var anchorOutput: Int64 = 0
+            if sourceSampleRate.rounded() == sourceSampleRate, outputSampleRate.rounded() == outputSampleRate {
+                let sourceRate = Int64(sourceSampleRate), outputRate = Int64(outputSampleRate)
+                var a = sourceRate, b = outputRate
+                while b != 0 { let remainder = a % b; a = b; b = remainder }
+                let sourcePeriod = sourceRate / a, outputPeriod = outputRate / a
+                // More than the converter's default filter history, on both rate directions.
+                let preroll = max(Int64(4096), Int64(ceil(4096 * sourceSampleRate / outputSampleRate)))
+                let periods = max(0, sourceStartFrame - preroll) / sourcePeriod
+                anchorSource = periods * sourcePeriod
+                anchorOutput = periods * outputPeriod
             }
-            file.framePosition = sourceStartFrame
-            conversionState = ConversionState(
-                converter: converter,
-                inputBuffer: inputBuffer,
-                outputFormat: convertedFormat,
-                sourceEndFrame: sourceEndFrame,
-                remainingSourceFrames: max(0, sourceEndFrame - sourceStartFrame),
-                nextSourceTime: sourceStartTime
-            )
+            try seek(to: anchorSource)
+            conversionState = ConversionState(converter: converter, inputBuffer: input, outputFormat: format,
+                remainingSourceFrames: sourceFrameCount - anchorSource, nextOutputFrame: anchorOutput)
         }
-
         guard let state = conversionState else { return nil }
+        while state.nextOutputFrame < targetFrame {
+            let count = AVAudioFrameCount(min(16_384, targetFrame - state.nextOutputFrame))
+            let skipped = try convert(state, count: count)
+            if skipped.frameLength == 0 { return nil }
+        }
+        return try convert(state, count: outputFrameCount)
+    }
+
+    private func convert(_ state: ConversionState, count: AVAudioFrameCount) throws -> AVAudioPCMBuffer {
+        guard let output = AVAudioPCMBuffer(pcmFormat: state.outputFormat, frameCapacity: count) else { throw conversionFailure() }
         var readError: Error?
         var conversionError: NSError?
-        let status = state.converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
-            guard state.remainingSourceFrames > 0 else {
-                inputStatus.pointee = .endOfStream
-                return nil
-            }
-
-            let framesToRead = AVAudioFrameCount(min(Int64(state.inputBuffer.frameCapacity), state.remainingSourceFrames))
-            state.inputBuffer.frameLength = 0
+        let status = state.converter.convert(to: output, error: &conversionError) { _, inputStatus in
+            guard state.remainingSourceFrames > 0 else { inputStatus.pointee = .endOfStream; return nil }
+            let count = AVAudioFrameCount(min(Int64(state.inputBuffer.frameCapacity), state.remainingSourceFrames))
             do {
-                try self.file.read(into: state.inputBuffer, frameCount: framesToRead)
-            } catch {
-                readError = error
-                inputStatus.pointee = .endOfStream
-                return nil
-            }
-
-            let framesRead = Int64(state.inputBuffer.frameLength)
-            guard framesRead > 0 else {
-                inputStatus.pointee = .endOfStream
-                return nil
-            }
-            state.remainingSourceFrames -= framesRead
+                try self.read(into: state.inputBuffer, frameCount: count)
+                // Sanitize before conversion so one NaN cannot contaminate filter history.
+                Self.sanitize(state.inputBuffer)
+            } catch { readError = error; inputStatus.pointee = .endOfStream; return nil }
+            let read = Int64(state.inputBuffer.frameLength)
+            guard read > 0 else { inputStatus.pointee = .endOfStream; return nil }
+            state.remainingSourceFrames -= read
             inputStatus.pointee = .haveData
             return state.inputBuffer
         }
+        if let readError { throw readError }
+        if let conversionError { throw conversionError }
+        guard status != .error else { throw conversionFailure() }
+        state.nextOutputFrame += Int64(output.frameLength)
+        Self.sanitize(output)
+        return output
+    }
 
-        if let readError {
-            throw readError
+    /// Invalid floating-point PCM is rendered as silence, consistently with waveform analysis.
+    static func sanitize(_ buffer: AVAudioPCMBuffer) {
+        guard let data = buffer.floatChannelData else { return }
+        for channel in 0..<Int(buffer.format.channelCount) {
+            for frame in 0..<Int(buffer.frameLength) where !data[channel][frame].isFinite {
+                data[channel][frame] = 0
+            }
         }
-        if let conversionError {
-            throw conversionError
-        }
-        guard status != .error else {
-            throw NSError(
-                domain: "LightAudioRender",
-                code: 71,
-                userInfo: [NSLocalizedDescriptionKey: L10n.tr("Audio sample-rate conversion failed.")]
-            )
-        }
-        state.nextSourceTime = sourceStartTime + Double(outputBuffer.frameLength) / outputSampleRate
-        return outputBuffer
+    }
+
+    private func conversionFailure() -> NSError {
+        NSError(domain: "LightAudioRender", code: 71,
+                userInfo: [NSLocalizedDescriptionKey: L10n.tr("Audio sample-rate conversion failed.")])
     }
 
     private func conversionFormat(sampleRate: Double, sourceFormat: AVAudioFormat) -> AVAudioFormat? {
@@ -378,9 +435,9 @@ final class TimelineAudioSource {
     /// and phase cancellation from treating every extra channel as an anonymous average.
     private static func makeDownmixCoefficients(
         channelCount: Int,
-        layoutTag: AudioChannelLayoutTag?
-    ) -> DownmixCoefficients {
-        let roles = channelRoles(channelCount: channelCount, layoutTag: layoutTag)
+        layout: AVAudioChannelLayout?
+    ) throws -> DownmixCoefficients {
+        let roles = try channelRoles(channelCount: channelCount, layout: layout)
         var left = Array(repeating: Float(0), count: channelCount)
         var right = Array(repeating: Float(0), count: channelCount)
 
@@ -403,58 +460,55 @@ final class TimelineAudioSource {
             case .centerSurround:
                 left[index] = 0.5
                 right[index] = 0.5
-            case .unknown:
-                if index.isMultiple(of: 2) {
-                    left[index] = 0.5
-                } else {
-                    right[index] = 0.5
-                }
+
             }
         }
         return DownmixCoefficients(left: left, right: right)
     }
 
-    private static func channelRoles(
-        channelCount: Int,
-        layoutTag: AudioChannelLayoutTag?
-    ) -> [ChannelRole] {
-        guard channelCount > 0 else { return [] }
-        if channelCount == 1 { return [.center] }
-        if channelCount == 2 { return [.left, .right] }
-
-        if let layoutTag {
-            if layoutTag == kAudioChannelLayoutTag_MPEG_5_1_B {
-                return [.left, .right, .leftSurround, .rightSurround, .center, .lfe]
-            }
-            if layoutTag == kAudioChannelLayoutTag_MPEG_5_1_C {
-                return [.left, .center, .right, .leftSurround, .rightSurround, .lfe]
-            }
-            if layoutTag == kAudioChannelLayoutTag_MPEG_5_1_D ||
-                layoutTag == kAudioChannelLayoutTag_AAC_5_1 {
-                return [.center, .left, .right, .leftSurround, .rightSurround, .lfe]
-            }
+    private static func channelRoles(channelCount: Int, layout: AVAudioChannelLayout?) throws -> [ChannelRole] {
+        func unsupported() -> NSError {
+            NSError(domain: "LightAudio", code: 4, userInfo: [NSLocalizedDescriptionKey:
+                L10n.tr("This audio channel layout is unsupported. Convert it to mono or stereo before importing.")])
         }
-
-        switch channelCount {
-        case 3:
-            return [.left, .right, .center]
-        case 4:
-            return [.left, .right, .leftSurround, .rightSurround]
-        case 5:
-            return [.left, .right, .center, .leftSurround, .rightSurround]
-        case 6:
-            return [.left, .right, .center, .lfe, .leftSurround, .rightSurround]
-        case 7:
-            return [.left, .right, .center, .lfe, .leftSurround, .rightSurround, .centerSurround]
-        default:
-            var roles: [ChannelRole] = [
-                .left, .right, .center, .lfe, .leftSurround, .rightSurround,
-                .leftSurround, .rightSurround
-            ]
-            if channelCount > roles.count {
-                roles.append(contentsOf: repeatElement(.unknown, count: channelCount - roles.count))
+        // Unlabelled mono/stereo are unambiguous; multichannel audio requires speaker labels.
+        guard let layout else {
+            if channelCount == 1 { return [.center] }
+            if channelCount == 2 { return [.left, .right] }
+            throw unsupported()
+        }
+        let source = layout.layout
+        let tag = source.pointee.mChannelLayoutTag
+        var allocation: UnsafeMutableRawPointer?
+        defer { allocation?.deallocate() }
+        let descriptions: UnsafePointer<AudioChannelLayout>
+        if tag == kAudioChannelLayoutTag_UseChannelDescriptions {
+            descriptions = source
+        } else {
+            let property = tag == kAudioChannelLayoutTag_UseChannelBitmap
+                ? kAudioFormatProperty_ChannelLayoutForBitmap : kAudioFormatProperty_ChannelLayoutForTag
+            var specifier: UInt32 = tag == kAudioChannelLayoutTag_UseChannelBitmap ? source.pointee.mChannelBitmap.rawValue : tag
+            var size: UInt32 = 0
+            guard AudioFormatGetPropertyInfo(property, 4, &specifier, &size) == noErr, size >= MemoryLayout<AudioChannelLayout>.size else { throw unsupported() }
+            let storage = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioChannelLayout>.alignment)
+            allocation = storage
+            guard AudioFormatGetProperty(property, 4, &specifier, &size, storage) == noErr else { throw unsupported() }
+            descriptions = UnsafePointer(storage.assumingMemoryBound(to: AudioChannelLayout.self))
+        }
+        guard descriptions.pointee.mNumberChannelDescriptions == channelCount else { throw unsupported() }
+        let offset = MemoryLayout<AudioChannelLayout>.offset(of: \.mChannelDescriptions)!
+        let labels = UnsafeRawPointer(descriptions).advanced(by: offset).assumingMemoryBound(to: AudioChannelDescription.self)
+        return try (0..<channelCount).map { index in
+            switch labels[index].mChannelLabel {
+            case kAudioChannelLabel_Left, kAudioChannelLabel_LeftCenter: return .left
+            case kAudioChannelLabel_Right, kAudioChannelLabel_RightCenter: return .right
+            case kAudioChannelLabel_Center, kAudioChannelLabel_Mono: return .center
+            case kAudioChannelLabel_LFEScreen, kAudioChannelLabel_LFE2: return .lfe
+            case kAudioChannelLabel_LeftSurround, kAudioChannelLabel_LeftSurroundDirect, kAudioChannelLabel_RearSurroundLeft: return .leftSurround
+            case kAudioChannelLabel_RightSurround, kAudioChannelLabel_RightSurroundDirect, kAudioChannelLabel_RearSurroundRight: return .rightSurround
+            case kAudioChannelLabel_CenterSurround: return .centerSurround
+            default: throw unsupported()
             }
-            return roles
         }
     }
 

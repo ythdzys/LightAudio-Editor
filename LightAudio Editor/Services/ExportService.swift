@@ -141,8 +141,10 @@ final class NativeAudioExportBackend: AudioExportBackend {
     func export(project: Project, settings: ExportSettings, cancellationToken: ExportCancellationToken, progress: @escaping (Double) -> Void) throws -> ExportResult {
         if cancellationToken.isCancelled { throw exportCancellationError() }
         try settings.validate()
+        try ProjectFileService().validateForRendering(project)
         try validateExportDestination(settings.outputURL, for: project)
         let sourceCache = SourceCache()
+        let activeClips = renderer.activeClips(in: project)
         guard settings.format == .wav || settings.format == .aiff else {
             throw NSError(domain: "LightAudio", code: 10, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This MVP exports WAV or AIFF with the native backend.")])
         }
@@ -155,14 +157,17 @@ final class NativeAudioExportBackend: AudioExportBackend {
         let range = renderRange(for: project, settings: settings)
         let outputTransaction = ExportOutputTransaction(destinationURL: settings.outputURL)
         defer { outputTransaction.discard() }
-        let minimumDuration = settings.range.start == nil ? 0.1 : 0
-        let requestedFrameCount = max(range.duration, minimumDuration) * sampleRate
+        let requestedFrameCount = range.duration * sampleRate
         guard requestedFrameCount.isFinite,
               requestedFrameCount >= 0,
-              requestedFrameCount <= Double(Int64.max) else {
+              requestedFrameCount < Double(Int64.max) else {
             throw NSError(domain: "LightAudioExport", code: 52, userInfo: [NSLocalizedDescriptionKey: L10n.tr("The requested export duration is too large.")])
         }
-        let totalFrames = AVAudioFramePosition(requestedFrameCount.rounded(.down))
+        let roundedFrameCount = AudioFrameMath.floor(requestedFrameCount)
+        guard roundedFrameCount >= 1 else {
+            throw NSError(domain: "LightAudioExport", code: 52, userInfo: [NSLocalizedDescriptionKey: L10n.tr("The export range contains no audio frames.")])
+        }
+        let totalFrames = AVAudioFramePosition(roundedFrameCount)
         let chunkFrames: AVAudioFrameCount = 4096
         var frame: AVAudioFramePosition = 0
         var clippingDetected = false
@@ -180,11 +185,11 @@ final class NativeAudioExportBackend: AudioExportBackend {
                 let outputChunkStart = Double(frame) / sampleRate
                 let chunkStart = range.start + outputChunkStart
                 let chunkEnd = range.start + Double(frame + AVAudioFramePosition(count)) / sampleRate
-                for (track, clip, asset) in renderer.activeClips(in: project) {
+                for (track, clip, asset) in activeClips {
                     let clipStart = clip.timelineStart
                     let clipEnd = clip.timelineStart + clip.duration
                     if clipEnd <= chunkStart || clipStart >= chunkEnd { continue }
-                    try mix(clip: clip, track: track, project: project, asset: asset, into: mixBuffer, chunkStart: chunkStart, sampleRate: sampleRate, sourceCache: sourceCache)
+                    try mix(clip: clip, track: track, project: project, asset: asset, into: mixBuffer, chunkStart: chunkStart, origin: range.start, chunkFrame: frame, sampleRate: sampleRate, sourceCache: sourceCache)
                 }
 
                 applyMasterGain(project.mixState.masterVolumeDB, to: mixBuffer)
@@ -223,28 +228,39 @@ final class NativeAudioExportBackend: AudioExportBackend {
         }
     }
 
-    private func mix(clip: Clip, track: Track, project: Project, asset: MediaAsset, into mixBuffer: AVAudioPCMBuffer, chunkStart: TimeInterval, sampleRate: Double, sourceCache: SourceCache) throws {
+    private func mix(clip: Clip, track: Track, project: Project, asset: MediaAsset, into mixBuffer: AVAudioPCMBuffer, chunkStart: TimeInterval, origin: TimeInterval, chunkFrame: AVAudioFramePosition, sampleRate: Double, sourceCache: SourceCache) throws {
         guard let url = asset.audioSourceURL else { return }
         let overlapStart = max(chunkStart, clip.timelineStart)
         let overlapEnd = min(chunkStart + Double(mixBuffer.frameLength) / sampleRate, clip.timelineStart + clip.duration)
         guard overlapEnd > overlapStart else { return }
 
-        let startFrame = max(0, Int(ceil((overlapStart - chunkStart) * sampleRate)))
-        let endFrame = min(Int(mixBuffer.frameLength), Int(ceil((overlapEnd - chunkStart) * sampleRate)))
+        // Map clip edges against one export origin, not by subtracting each chunk's
+        // floating-point time. Adjacent clips must agree on the exact boundary frame.
+        let first = Int64(AudioFrameMath.ceiling((clip.timelineStart - origin) * sampleRate))
+        let last = Int64(AudioFrameMath.ceiling((clip.timelineStart + clip.duration - origin) * sampleRate))
+        let startFrame = max(0, Int(first - chunkFrame))
+        let endFrame = min(Int(mixBuffer.frameLength), Int(last - chunkFrame))
         let frameCount = max(0, endFrame - startFrame)
         guard frameCount > 0 else { return }
 
         let renderStart = chunkStart + Double(startFrame) / sampleRate
-        let source = try source(for: clip, url: url, sourceCache: sourceCache)
-        try source.mix(
-            clip: clip,
-            track: track,
-            project: project,
-            into: mixBuffer,
-            timelineStart: renderStart,
-            frameCount: AVAudioFrameCount(frameCount),
-            destinationOffset: startFrame
-        )
+        do {
+            let source = try source(for: clip, url: url, sourceCache: sourceCache)
+            try source.mix(
+                clip: clip,
+                track: track,
+                project: project,
+                into: mixBuffer,
+                timelineStart: renderStart,
+                frameCount: AVAudioFrameCount(frameCount),
+                destinationOffset: startFrame
+            )
+        } catch {
+            throw NSError(domain: "LightAudioRender", code: 72, userInfo: [
+                NSLocalizedDescriptionKey: L10n.format("Could not read audio from %@ at %.2f seconds.", asset.metadata.fileName, clip.sourceStart + renderStart - clip.timelineStart),
+                NSUnderlyingErrorKey: error
+            ])
+        }
     }
 
     private func source(for clip: Clip, url: URL, sourceCache: SourceCache) throws -> TimelineAudioSource {
@@ -290,6 +306,7 @@ final class NativeAudioExportBackend: AudioExportBackend {
 
 }
 
+#if os(macOS)
 final class ExternalEncoderExportBackend: AudioExportBackend {
     private let nativeBackend = NativeAudioExportBackend()
     private let encoderPathProvider: () -> String?
@@ -331,6 +348,7 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
     func export(project: Project, settings: ExportSettings, cancellationToken: ExportCancellationToken, progress: @escaping (Double) -> Void) throws -> ExportResult {
         if cancellationToken.isCancelled { throw exportCancellationError() }
         try settings.validate()
+        try ProjectFileService().validateForRendering(project)
         try validateExportDestination(settings.outputURL, for: project)
         let ffmpegPath = encoderPathProvider()
         let availability = Self.availability(for: settings.format, encoderPath: ffmpegPath)
@@ -514,6 +532,8 @@ final class ExternalEncoderExportBackend: AudioExportBackend {
     }
 }
 
+#endif
+
 final class ExportService {
     private let operationLock = NSLock()
     private var activeCancellationToken: ExportCancellationToken?
@@ -544,7 +564,11 @@ final class ExportService {
                 case .wav, .aiff:
                     result = try NativeAudioExportBackend().export(project: project, settings: settings, cancellationToken: cancellationToken, progress: progress)
                 case .m4a, .mp3, .flac:
+                    #if os(macOS)
                     result = try ExternalEncoderExportBackend().export(project: project, settings: settings, cancellationToken: cancellationToken, progress: progress)
+                    #else
+                    throw NSError(domain: "LightAudioExport", code: 53, userInfo: [NSLocalizedDescriptionKey: "Choose WAV or AIFF on iPad. Compressed export is not available yet."])
+                    #endif
                 }
                 DispatchQueue.main.async { completion(.success(result)) }
             } catch {
@@ -569,6 +593,7 @@ final class ExportService {
     }
 
     private func validateProjectMedia(_ project: Project) throws {
+        try ProjectFileService().validateForRendering(project)
         let unavailableSources = project.assets.filter { asset in
             guard !asset.isMissing, let sourceURL = asset.resolvedURL else { return true }
             return !FileManager.default.fileExists(atPath: sourceURL.path)
@@ -578,7 +603,7 @@ final class ExportService {
             throw NSError(domain: "LightAudio", code: 12, userInfo: [NSLocalizedDescriptionKey: L10n.format("Relink missing media before exporting:\n%@", names)])
         }
 
-        let unavailableProxies = TimelineRenderService().unavailableVideoProxyAssets(in: project)
+        let unavailableProxies = TimelineRenderService().unavailableAudioProxyAssets(in: project)
         guard unavailableProxies.isEmpty else {
             let names = unavailableProxies.map { $0.metadata.fileName }.sorted().joined(separator: "\n")
             throw NSError(domain: "LightAudio", code: 13, userInfo: [NSLocalizedDescriptionKey: L10n.format("Finish generating or relink unavailable audio proxies before exporting:\n%@", names)])

@@ -362,11 +362,16 @@ final class P2RegressionTests: XCTestCase {
         )
 
         let fileService = ProjectFileService()
-        try fileService.save(project, to: projectURL)
+        XCTAssertThrowsError(try fileService.save(project, to: projectURL))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.path))
+        // Bypass save validation to represent a malformed document supplied by another writer.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(project).write(to: projectURL)
         XCTAssertThrowsError(try fileService.load(from: projectURL))
     }
 
-    func testProjectSaveWritesCurrentFormatVersion() throws {
+    func testProjectSaveWritesMinimumRequiredFormatVersion() throws {
         let projectURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LightAudio-Versioned-\(UUID().uuidString).liau")
         defer { try? FileManager.default.removeItem(at: projectURL) }
@@ -376,7 +381,7 @@ final class P2RegressionTests: XCTestCase {
             JSONSerialization.jsonObject(with: Data(contentsOf: projectURL)) as? [String: Any]
         )
 
-        XCTAssertEqual(object["formatVersion"] as? Int, Project.currentFormatVersion)
+        XCTAssertEqual(object["formatVersion"] as? Int, 1)
     }
 
     func testLegacyUnversionedProjectMigratesToFormatVersionOne() throws {
@@ -393,7 +398,7 @@ final class P2RegressionTests: XCTestCase {
             .write(to: projectURL, options: .atomic)
 
         let (loaded, missing) = try ProjectFileService().load(from: projectURL)
-        XCTAssertEqual(loaded.formatVersion, Project.currentFormatVersion)
+        XCTAssertEqual(loaded.formatVersion, 1)
         XCTAssertTrue(missing.isEmpty)
     }
 
@@ -724,7 +729,7 @@ final class P2RegressionTests: XCTestCase {
         XCTAssertEqual(controller.audioRenderRevision, revisionBeforeRemoval + 1)
     }
 
-    func testRecoveryIgnoresSnapshotFromEarlierSession() throws {
+    func testRecoveryPreservesUnresolvedSnapshotFromEarlierInterruptedSession() throws {
         let workspaceURL = FileManager.default.temporaryDirectory.appendingPathComponent("LightAudio-Recovery-\(UUID().uuidString)", isDirectory: true)
         let recoveryURL = workspaceURL.appendingPathComponent("Recovery", isDirectory: true)
         let savedProjectURL = workspaceURL.appendingPathComponent("Saved.liau")
@@ -733,19 +738,24 @@ final class P2RegressionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: workspaceURL) }
 
         let originalSession = AutosaveRecoveryService(recoveryDirectory: recoveryURL)
-        originalSession.projectProvider = { Project.empty(name: "Old Project") }
+        let unsavedProject = Project.empty(name: "Old Project")
+        originalSession.projectProvider = { unsavedProject }
         originalSession.isDirtyProvider = { true }
         originalSession.start(projectURL: savedProjectURL, interval: 3_600)
         originalSession.markSessionStarted()
         originalSession.writeSnapshot()
         originalSession.stop()
 
-        // A later session is the one that ended unexpectedly. Its recovery check must not surface old state.
+        // A later interrupted session must not erase unresolved edits from the first crash.
         let laterSession = AutosaveRecoveryService(recoveryDirectory: recoveryURL)
         laterSession.markSessionStarted()
         laterSession.stop()
 
         let recoveryCheck = AutosaveRecoveryService(recoveryDirectory: recoveryURL)
+        let recovered = try XCTUnwrap(recoveryCheck.latestRecoverableSnapshot())
+        XCTAssertEqual(recovered.1.project.id, unsavedProject.id)
+        // Retire only when the saved editing content proves those edits are durable.
+        try ProjectFileService().save(unsavedProject, to: savedProjectURL)
         XCTAssertNil(recoveryCheck.latestRecoverableSnapshot())
     }
 
@@ -760,6 +770,7 @@ final class P2RegressionTests: XCTestCase {
         project.lastSavedAt = Date(timeIntervalSinceNow: -120)
         try ProjectFileService().save(project, to: savedProjectURL)
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -120)], ofItemAtPath: savedProjectURL.path)
+        project.name = "Pending unsaved edits" // Recovery compares editing content, not only timestamps.
 
         let crashedSession = AutosaveRecoveryService(recoveryDirectory: recoveryURL)
         crashedSession.projectProvider = { project }
@@ -1315,6 +1326,9 @@ final class P2RegressionTests: XCTestCase {
         let controller = ProjectController(recoveryService: recoveryService)
         let asset = try importAsset(from: sourceURL, into: controller)
         let timestamp = try XCTUnwrap(asset.sourceModificationTimestamp)
+        // Content verification accepts timestamp-only changes. Replace the audio to
+        // exercise the original safety guarantee: changed samples cannot be rendered.
+        try writeMonoSourceFile(to: sourceURL, sample: 0.25, duration: 1)
         try FileManager.default.setAttributes(
             [.modificationDate: Date(timeIntervalSince1970: timestamp + 60)],
             ofItemAtPath: sourceURL.path
@@ -1375,6 +1389,7 @@ final class P2RegressionTests: XCTestCase {
         project.lastSavedAt = Date(timeIntervalSinceNow: -120)
         try ProjectFileService().save(project, to: savedProjectURL)
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -120)], ofItemAtPath: savedProjectURL.path)
+        project.name = "Edits after cache clearing" // Recovery compares editing content, not only timestamps.
         defer { try? FileManager.default.removeItem(at: workspaceURL) }
 
         let activeSession = AutosaveRecoveryService(recoveryDirectory: recoveryURL)
@@ -1801,8 +1816,10 @@ final class P2RegressionTests: XCTestCase {
         )
         let proxyService = MediaProxyService(proxyDirectory: proxyDirectory)
         let proxyKey = proxyService.cacheKey(for: asset, sourceURL: sourceURL)
-        let expectedProxyURL = proxyDirectory.appendingPathComponent("\(proxyKey).m4a")
+        let expectedProxyURL = proxyDirectory.appendingPathComponent("\(proxyKey).caf")
         try FileManager.default.copyItem(at: sourceURL, to: expectedProxyURL)
+        try Data(FileMetadataHasher.fullChecksum(for: expectedProxyURL).utf8)
+            .write(to: expectedProxyURL.appendingPathExtension("sha256"))
         asset.resolvedPath = nil
 
         let project = Project(

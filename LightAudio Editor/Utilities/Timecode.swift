@@ -1,5 +1,13 @@
 import Foundation
 
+enum NumericInput {
+    static func number(_ text: String) -> Double? {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")
+        guard let value = Double(normalized), value.isFinite else { return nil }
+        return value
+    }
+}
+
 enum Timecode {
     static func string(_ seconds: TimeInterval) -> String {
         let clamped = max(0, seconds)

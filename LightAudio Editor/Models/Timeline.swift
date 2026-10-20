@@ -38,8 +38,8 @@ enum CrossfadeCurve: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .linear: return "Linear"
-        case .equalPower: return "Equal Power"
+        case .linear: return L10n.tr("Linear")
+        case .equalPower: return L10n.tr("Equal Power")
         }
     }
 }
@@ -51,20 +51,65 @@ struct Crossfade: Codable, Identifiable, Equatable {
     var startTime: TimeInterval
     var duration: TimeInterval
     var curve: CrossfadeCurve = .equalPower
+    var startProgress: Double = 0
+    var endProgress: Double = 1
+    var isPartial: Bool { startProgress != 0 || endProgress != 1 }
 
-    init(id: UUID = UUID(), leadingClipID: UUID, trailingClipID: UUID, startTime: TimeInterval, duration: TimeInterval, curve: CrossfadeCurve = .equalPower) {
+    enum CodingKeys: String, CodingKey {
+        case id, leadingClipID, trailingClipID, startTime, duration, curve, startProgress, endProgress
+    }
+
+    init(id: UUID = UUID(), leadingClipID: UUID, trailingClipID: UUID, startTime: TimeInterval, duration: TimeInterval, curve: CrossfadeCurve = .equalPower, startProgress: Double = 0, endProgress: Double = 1) {
         self.id = id
         self.leadingClipID = leadingClipID
         self.trailingClipID = trailingClipID
         self.startTime = max(0, startTime)
         self.duration = max(0, duration)
         self.curve = curve
+        self.startProgress = startProgress
+        self.endProgress = endProgress
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        leadingClipID = try values.decode(UUID.self, forKey: .leadingClipID)
+        trailingClipID = try values.decode(UUID.self, forKey: .trailingClipID)
+        startTime = try values.decode(TimeInterval.self, forKey: .startTime)
+        duration = try values.decode(TimeInterval.self, forKey: .duration)
+        curve = try values.decode(CrossfadeCurve.self, forKey: .curve)
+        startProgress = try values.decodeIfPresent(Double.self, forKey: .startProgress) ?? 0
+        endProgress = try values.decodeIfPresent(Double.self, forKey: .endProgress) ?? 1
+        guard startTime.isFinite, duration.isFinite, startTime >= 0, duration >= 0,
+              startProgress.isFinite, endProgress.isFinite,
+              0 <= startProgress, startProgress <= endProgress, endProgress <= 1 else {
+            throw DecodingError.dataCorruptedError(forKey: .startProgress, in: values, debugDescription: "Invalid crossfade interval")
+        }
+    }
+
+    func segment(from start: TimeInterval, through end: TimeInterval) -> Crossfade? {
+        let lower = max(start, startTime), upper = min(end, startTime + duration)
+        guard duration > 0, upper > lower else { return nil }
+        var result = self
+        result.startTime = lower; result.duration = upper - lower
+        let delta = endProgress - startProgress
+        result.startProgress = min(endProgress, max(startProgress, startProgress + delta * (lower - startTime) / duration))
+        result.endProgress = min(endProgress, max(startProgress, startProgress + delta * (upper - startTime) / duration))
+        return result
+    }
+
+    func gain(at progress: Double, incoming: Bool) -> Double {
+        let value = startProgress + (endProgress - startProgress) * min(1, max(0, progress))
+        return FadeMath.crossfadeGain(progress: incoming ? value : 1 - value, curve: curve)
     }
 
     func contains(clipID: UUID, timelineTime: TimeInterval) -> Bool {
-        (clipID == leadingClipID || clipID == trailingClipID) &&
-            timelineTime >= startTime &&
-            timelineTime <= startTime + duration
+        let end = startTime + duration
+        // Rendering adds chunk and frame times; an exact shared boundary can land
+        // a few ulps below its stored value. Snap that noise to the next interval.
+        let tolerance = max(1e-12, 8 * max(timelineTime.ulp, max(startTime.ulp, end.ulp)))
+        return (clipID == leadingClipID || clipID == trailingClipID) &&
+            timelineTime >= startTime - tolerance && timelineTime < end - tolerance
     }
 }
 
@@ -147,7 +192,7 @@ struct TrackVolumeAutomationKeyframe: Codable, Identifiable, Equatable {
     var gainDB: Double
 
     func clamped() -> TrackVolumeAutomationKeyframe {
-        TrackVolumeAutomationKeyframe(id: id, time: max(0, time), gainDB: MixMath.clampTrackVolumeDB(gainDB))
+        TrackVolumeAutomationKeyframe(id: id, time: TimelineViewState.clampedTimelineTime(time) ?? 0, gainDB: MixMath.clampTrackVolumeDB(gainDB))
     }
 }
 
@@ -256,13 +301,13 @@ enum ClipColorLabel: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .default: return "Default"
-        case .blue: return "Blue"
-        case .green: return "Green"
-        case .purple: return "Purple"
-        case .orange: return "Orange"
-        case .red: return "Red"
-        case .gray: return "Gray"
+        case .default: return L10n.tr("Default")
+        case .blue: return L10n.tr("Blue")
+        case .green: return L10n.tr("Green")
+        case .purple: return L10n.tr("Purple")
+        case .orange: return L10n.tr("Orange")
+        case .red: return L10n.tr("Red")
+        case .gray: return L10n.tr("Gray")
         }
     }
 }
@@ -275,10 +320,10 @@ enum FadeCurve: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .linear: return "Linear"
-        case .equalPower: return "Equal Power"
-        case .easeIn: return "Ease In"
-        case .easeOut: return "Ease Out"
+        case .linear: return L10n.tr("Linear")
+        case .equalPower: return L10n.tr("Equal Power")
+        case .easeIn: return L10n.tr("Ease In")
+        case .easeOut: return L10n.tr("Ease Out")
         }
     }
 }
@@ -286,10 +331,16 @@ enum FadeCurve: String, Codable, CaseIterable {
 struct Fade: Codable {
     var duration: TimeInterval = 0
     var curve: FadeCurve = .linear
+    // A split retains the original curve interval instead of restarting its shape.
+    var startProgress: Double = 0
+    var endProgress: Double = 1
+    var isPartial: Bool { startProgress != 0 || endProgress != 1 }
 
     enum CodingKeys: String, CodingKey {
         case duration
         case curve
+        case startProgress
+        case endProgress
     }
 
     init(duration: TimeInterval = 0, curve: FadeCurve = .linear) {
@@ -301,6 +352,30 @@ struct Fade: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         duration = max(0, try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0)
         curve = try container.decodeIfPresent(FadeCurve.self, forKey: .curve) ?? .linear
+        startProgress = try container.decodeIfPresent(Double.self, forKey: .startProgress) ?? 0
+        endProgress = try container.decodeIfPresent(Double.self, forKey: .endProgress) ?? 1
+        guard startProgress.isFinite, endProgress.isFinite,
+              0 <= startProgress, startProgress <= endProgress, endProgress <= 1 else {
+            throw DecodingError.dataCorruptedError(forKey: .startProgress, in: container, debugDescription: "Invalid fade curve interval")
+        }
+    }
+
+    /// Distance is measured from the faded edge (from the end for a fade-out).
+    func segment(from start: TimeInterval, through end: TimeInterval) -> Fade {
+        guard duration > 0, end > start else { return Fade() }
+        if start >= duration && endProgress == 1 { return Fade() }
+        var result = self
+        result.duration = min(end - start, max(0, duration - start))
+        // A constant partial endpoint still applies over the entire retained clip.
+        if result.duration == 0 { result.duration = end - start }
+        let delta = endProgress - startProgress
+        result.startProgress = startProgress + delta * min(1, max(0, start / duration))
+        result.endProgress = startProgress + delta * min(1, max(0, end / duration))
+        return result
+    }
+
+    func gain(at progress: Double) -> Double {
+        FadeMath.curveGain(progress: startProgress + (endProgress - startProgress) * min(1, max(0, progress)), curve: curve)
     }
 }
 
@@ -451,12 +526,12 @@ enum FadeMath {
         let fadeOut = min(max(0, clip.fadeOut.duration), clip.duration)
         if fadeIn > 0 {
             let progress = min(1, max(0, (timelineTime - clip.timelineStart) / fadeIn))
-            value = min(value, curveGain(progress: progress, curve: clip.fadeIn.curve))
+            value = min(value, clip.fadeIn.gain(at: progress))
         }
         if fadeOut > 0 {
             let remaining = clip.timelineStart + clip.duration - timelineTime
             let progress = min(1, max(0, remaining / fadeOut))
-            value = min(value, curveGain(progress: progress, curve: clip.fadeOut.curve))
+            value = min(value, clip.fadeOut.gain(at: progress))
         }
         return value
     }
@@ -469,10 +544,10 @@ enum FadeMath {
         }
         let progress = min(1, max(0, (timelineTime - crossfade.startTime) / crossfade.duration))
         if clipID == crossfade.leadingClipID {
-            return crossfadeGain(progress: 1 - progress, curve: crossfade.curve)
+            return crossfade.gain(at: progress, incoming: false)
         }
         if clipID == crossfade.trailingClipID {
-            return crossfadeGain(progress: progress, curve: crossfade.curve)
+            return crossfade.gain(at: progress, incoming: true)
         }
         return 1
     }
@@ -499,5 +574,17 @@ enum FadeMath {
         case .equalPower:
             return sin(t * Double.pi / 2)
         }
+    }
+}
+
+/// Shared edit semantics; neither platform controller depends on a view type.
+enum TimelineTrimEdge { case left, right }
+
+enum EditorPreferences {
+    private static let automaticCrossfadesKey = "LightAudio.AutomaticCrossfades"
+
+    static var automaticallyCreateCrossfades: Bool {
+        get { UserDefaults.standard.bool(forKey: automaticCrossfadesKey) }
+        set { UserDefaults.standard.set(newValue, forKey: automaticCrossfadesKey) }
     }
 }

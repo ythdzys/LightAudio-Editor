@@ -1,0 +1,221 @@
+{
+  "date": "2026-10-20",
+  "scope": "Read-only comparison of current macOS and iPadOS working trees; five focused renderer checks executed on this Mac using each platform source set. Localization only was stubbed. No application source edits in this audit.",
+  "test_summary": {
+    "macos": {
+      "passed": 1,
+      "failed": 4,
+      "total": 5
+    },
+    "ipad": {
+      "passed": 5,
+      "failed": 0,
+      "total": 5
+    }
+  },
+  "checks": {
+    "macos": [
+      {
+        "check": "stereoToMonoCenter",
+        "expected": 0.3,
+        "actual": 0.30000001192092896,
+        "passed": true
+      },
+      {
+        "check": "stereoToMonoHardRight",
+        "expected": 0.1,
+        "actual": 0.30000001192092896,
+        "passed": false
+      },
+      {
+        "check": "monoToMonoCenter",
+        "expected": 0.282842712474619,
+        "actual": 0.4000000059604645,
+        "passed": false
+      },
+      {
+        "check": "monoToMonoHardRight",
+        "expected": 0.2,
+        "actual": 0.4000000059604645,
+        "passed": false
+      },
+      {
+        "check": "resampledSplitMaxError",
+        "expected": 0.0,
+        "actual": 0.08412765711545944,
+        "passed": false
+      }
+    ],
+    "ipad": [
+      {
+        "check": "stereoToMonoCenter",
+        "expected": 0.3,
+        "actual": 0.30000001192092896,
+        "passed": true
+      },
+      {
+        "check": "stereoToMonoHardRight",
+        "expected": 0.1,
+        "actual": 0.10000000149011612,
+        "passed": true
+      },
+      {
+        "check": "monoToMonoCenter",
+        "expected": 0.282842712474619,
+        "actual": 0.2828427255153656,
+        "passed": true
+      },
+      {
+        "check": "monoToMonoHardRight",
+        "expected": 0.2,
+        "actual": 0.20000000298023224,
+        "passed": true
+      },
+      {
+        "check": "resampledSplitMaxError",
+        "expected": 0.0,
+        "actual": 0,
+        "passed": true
+      }
+    ]
+  },
+  "raw_results": {
+    "macos": {
+      "monoToMonoCenter": 0.4000000059604645,
+      "monoToMonoHardRight": 0.4000000059604645,
+      "renderedFrames": 24000,
+      "resampledSplitMaxError": 0.08412765711545944,
+      "resampledSplitRMSError": 0.03778208099756828,
+      "splitRenderedFrames": 24000,
+      "stereoToMonoCenter": 0.30000001192092896,
+      "stereoToMonoHardRight": 0.30000001192092896
+    },
+    "ipad": {
+      "monoToMonoCenter": 0.2828427255153656,
+      "monoToMonoHardRight": 0.20000000298023224,
+      "renderedFrames": 24000,
+      "resampledSplitMaxError": 0,
+      "resampledSplitRMSError": 0,
+      "splitRenderedFrames": 24000,
+      "stereoToMonoCenter": 0.30000001192092896,
+      "stereoToMonoHardRight": 0.10000000149011612
+    }
+  },
+  "findings": [
+    {
+      "id": "recovery",
+      "priority": 1,
+      "kind": "code-confirmed defect",
+      "detail": "macOS consumes and removes the pending snapshot even on Cancel or failed restore/open. iPad retains deferred and unsuccessful recovery candidates.",
+      "mac": "App/CrashRecoveryController.swift:23",
+      "ipad": "iPadOS/Editor/IPadEditorStore.swift:784"
+    },
+    {
+      "id": "resampled-split",
+      "priority": 1,
+      "kind": "locally reproduced audio discrepancy",
+      "detail": "A 44.1 kHz tone rendered at 48 kHz changes after a split at 0.137 s on macOS; iPad shared renderer is sample-identical.",
+      "mac": "Services/TimelineRenderService.swift:274",
+      "ipad": "Shared/Services/TimelineRenderService.swift:289"
+    },
+    {
+      "id": "fade-split",
+      "priority": 1,
+      "kind": "code-confirmed audio discrepancy",
+      "detail": "macOS shortens outer fades, removes inner fades and deletes crossfades at a split. iPad preserves each affected curve segment and crossfade.",
+      "mac": "App/ProjectController.swift:774",
+      "ipad": "Shared/App/ProjectController.swift:848"
+    },
+    {
+      "id": "mono-pan",
+      "priority": 1,
+      "kind": "locally reproduced audio discrepancy",
+      "detail": "macOS mono output bypasses pan and mono-source equal-power pan law; iPad folds down the actual panned stereo mix.",
+      "mac": "Services/TimelineRenderService.swift:196",
+      "ipad": "Shared/Services/TimelineRenderService.swift:262"
+    },
+    {
+      "id": "project-format",
+      "priority": 2,
+      "kind": "missing compatibility",
+      "detail": "macOS supports schema 1 only. iPad writes schema 2 for partial fades and 3 for partial crossfades; those projects cannot open on macOS. iPad projects without these features still use schema 1.",
+      "mac": "Models/Project.swift:4",
+      "ipad": "Shared/Models/Project.swift:85"
+    },
+    {
+      "id": "normalize",
+      "priority": 2,
+      "kind": "code-confirmed defect",
+      "detail": "A -60 dBFS target uses the fader mute sentinel on macOS and sets gain to zero. iPad uses pow(10, dB/20). iPad also supports cancellation and precise trimmed-region sample bounds.",
+      "mac": "App/ProjectController.swift:1057",
+      "ipad": "Shared/App/ProjectController.swift:1159"
+    },
+    {
+      "id": "m4a-container",
+      "priority": 2,
+      "kind": "implementation gap; new runtime verification pending",
+      "detail": "iPad routes M4A through container-aware audio preparation for edits, gaps, retiming and multiple tracks. macOS uses direct AVAudioFile. Ordinary M4A passed the earlier portability suite; edited-container parity is not established.",
+      "mac": "Services/MediaImportService.swift:37",
+      "ipad": "Shared/Utilities/AudioFormatHelpers.swift:12"
+    },
+    {
+      "id": "loop",
+      "priority": 2,
+      "kind": "implementation gap; audible gap duration not measured",
+      "detail": "macOS stops and restarts the playback engine at every loop boundary. iPad uses continuous PCM queues across boundaries.",
+      "mac": "App/MainWindowController.swift:1173",
+      "ipad": "Shared/Services/AudioPlaybackEngine.swift:201"
+    },
+    {
+      "id": "automation-ui",
+      "priority": 2,
+      "kind": "missing controls",
+      "detail": "Both render clip pan and track volume automation. Only iPad exposes their dedicated add/move/delete/clear editors; macOS exposes clip volume automation editing.",
+      "mac": "UI/InspectorViewController.swift:369",
+      "ipad": "iPadOS/Editor/AutomationEditorView.swift:1"
+    },
+    {
+      "id": "preparation",
+      "priority": 2,
+      "kind": "performance architecture difference; no new stress benchmark",
+      "detail": "iPad uses two shared preparation slots, cancellable waveforms, a waveform memory budget, background source verification and asynchronous cache reads. macOS lacks the corresponding bounded preparation subsystem and cold verification remains synchronous.",
+      "mac": "Services/MediaProxyService.swift:164",
+      "ipad": "Shared/Services/MediaPreparationScheduler.swift:7"
+    },
+    {
+      "id": "export-range",
+      "priority": 3,
+      "kind": "missing convenience control",
+      "detail": "iPad offers explicit numeric export start/end fields and optional timeline In/Out import. macOS offers whole project or existing In/Out only.",
+      "mac": "UI/ExportPanelController.swift:302",
+      "ipad": "iPadOS/Export/ExportAudioView.swift:45"
+    },
+    {
+      "id": "save-as",
+      "priority": 3,
+      "kind": "workflow choice, not automatically a defect",
+      "detail": "iPad Save project as copies all library sources and creates a new project identity. macOS Save As writes a new project file retaining references and identity; portable copying uses Collect Project Media.",
+      "mac": "App/ProjectController.swift:202",
+      "ipad": "iPadOS/Editor/ProjectWorkspace.swift:189"
+    },
+    {
+      "id": "import-duplicates",
+      "priority": 3,
+      "kind": "workflow choice",
+      "detail": "iPad detects byte-identical sources by digest, including across folders. macOS recognizes duplicate library imports by normalized path.",
+      "mac": "App/ProjectController.swift:1651",
+      "ipad": "iPadOS/Editor/MediaTransfer.swift:88"
+    }
+  ],
+  "limitations": [
+    "iPad shared sources compiled and run on macOS, not a fresh iPad device or Simulator test.",
+    "Static findings were not all exercised through UI. Loop latency, M4A edited-container behavior and batch preparation performance were not measured in this audit.",
+    "The full application suites were not rerun. Earlier export/relink verification remains applicable: its source manifest still matches."
+  ],
+  "artifacts": [
+    "Probe.swift",
+    "run-probe.py",
+    "macos-source-manifest.json",
+    "ipad-source-manifest.json"
+  ]
+}

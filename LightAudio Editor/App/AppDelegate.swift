@@ -119,7 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recoveryController.checkForRecovery(
             presenter: mainWindowController?.window,
             openSaved: { url in controller.open(url: url) },
-            restore: { snapshot in controller.restore(snapshot: snapshot) },
+            restore: { snapshot in
+                guard controller.restore(snapshot: snapshot), let url = snapshot.originalProjectURL else { return false }
+                return controller.save(to: url)
+            },
             completion: { [weak self] in
                 self?.recoveryCheckInProgress = false
                 self?.openPendingProjectIfNeeded()
@@ -170,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let projectMenu = NSMenu(title: L10n.tr("Project"))
         addMenuItem(to: projectMenu, title: L10n.tr("Relink Missing Media..."), action: #selector(relinkMissingMedia(_:)), keyEquivalent: "")
         addMenuItem(to: projectMenu, title: L10n.tr("Locate Folder for Missing Media..."), action: #selector(locateMissingMediaFolder(_:)), keyEquivalent: "")
+        addMenuItem(to: projectMenu, title: L10n.tr("Recover Interrupted Project..."), action: #selector(recoverInterruptedProject(_:)), keyEquivalent: "")
         projectMenu.addItem(.separator())
         addMenuItem(to: projectMenu, title: L10n.tr("Remove Unused Media"), action: #selector(removeUnusedMedia(_:)), keyEquivalent: "")
         projectMenu.addItem(.separator())
@@ -236,6 +240,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewItem.submenu = viewMenu
 
         NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func recoverInterruptedProject(_ sender: Any?) {
+        mainWindowController?.prepareForProjectReplacement { [weak self] in
+            self?.hasCheckedForRecovery = false
+            self?.checkForRecoveryThenOpenPendingProject()
+        }
     }
 
     @discardableResult

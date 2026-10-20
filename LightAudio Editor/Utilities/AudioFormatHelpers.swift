@@ -9,6 +9,10 @@ enum AudioFormatHelpers {
         return audioExtensions.contains(lower) || videoExtensions.contains(lower)
     }
 
+    static func requiresContainerAudioDecode(_ ext: String) -> Bool {
+        isVideoExtension(ext) || ext.lowercased() == "m4a"
+    }
+
     static func isVideoExtension(_ ext: String) -> Bool {
         videoExtensions.contains(ext.lowercased())
     }

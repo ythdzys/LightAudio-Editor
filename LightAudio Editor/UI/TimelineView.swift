@@ -81,7 +81,7 @@ enum WaveformRenderMetrics {
 }
 
 final class TimelineView: NSView {
-    enum TrimEdge { case left, right }
+    typealias TrimEdge = TimelineTrimEdge
 
     var project: Project = .empty() {
         didSet {
@@ -119,6 +119,8 @@ final class TimelineView: NSView {
     var onToggleTrackLock: ((UUID) -> Void)?
     var onSetTrackVolume: ((UUID, Double) -> Void)?
     var onSetTrackPan: ((UUID, Double) -> Void)?
+    var onTrackVolumeAutomation: ((UUID) -> Void)?
+    var onClipPanAutomation: ((UUID) -> Void)?
     var onRenameTrack: ((UUID) -> Void)?
     var onAddTrack: (() -> Void)?
     var onAddTrackAbove: ((UUID) -> Void)?
@@ -874,7 +876,7 @@ final class TimelineView: NSView {
                 width: width,
                 topY: rect.minY + 22,
                 bottomY: rect.maxY - 8,
-                curve: clip.fadeIn.curve,
+                fade: clip.fadeIn,
                 rising: true
             )
             NSColor.white.withAlphaComponent(0.65).setStroke()
@@ -888,7 +890,7 @@ final class TimelineView: NSView {
                 width: width,
                 topY: rect.minY + 22,
                 bottomY: rect.maxY - 8,
-                curve: clip.fadeOut.curve,
+                fade: clip.fadeOut,
                 rising: false
             )
             NSColor.white.withAlphaComponent(0.65).setStroke()
@@ -996,12 +998,12 @@ final class TimelineView: NSView {
         text.draw(in: rect.insetBy(dx: padding.width, dy: padding.height - 1), withAttributes: attrs)
     }
 
-    private func fadeGuidePath(startX: CGFloat, width: CGFloat, topY: CGFloat, bottomY: CGFloat, curve: FadeCurve, rising: Bool) -> NSBezierPath {
+    private func fadeGuidePath(startX: CGFloat, width: CGFloat, topY: CGFloat, bottomY: CGFloat, fade: Fade, rising: Bool) -> NSBezierPath {
         let path = NSBezierPath()
         let samples = max(4, min(36, Int(width / 6)))
         for index in 0...samples {
             let fraction = Double(index) / Double(samples)
-            let gain = FadeMath.curveGain(progress: rising ? fraction : 1 - fraction, curve: curve)
+            let gain = fade.gain(at: rising ? fraction : 1 - fraction)
             let x = startX + CGFloat(fraction) * width
             let y = bottomY - CGFloat(gain) * (bottomY - topY)
             if index == 0 {
@@ -1047,8 +1049,8 @@ final class TimelineView: NSView {
             for index in 0...samples {
                 let progress = Double(index) / Double(samples)
                 let x = rect.minX + CGFloat(progress) * rect.width
-                let inGain = FadeMath.crossfadeGain(progress: progress, curve: crossfade.curve)
-                let outGain = FadeMath.crossfadeGain(progress: 1 - progress, curve: crossfade.curve)
+                let inGain = crossfade.gain(at: progress, incoming: true)
+                let outGain = crossfade.gain(at: progress, incoming: false)
                 let inY = rect.maxY - CGFloat(inGain) * rect.height
                 let outY = rect.maxY - CGFloat(outGain) * rect.height
                 if index == 0 {
@@ -1975,6 +1977,7 @@ final class TimelineView: NSView {
             guard index < project.timeline.tracks.count else { return nil }
             let track = project.timeline.tracks[index]
             let menu = NSMenu()
+            menu.addItem(withTitle: L10n.tr("Track Volume Automation..."), action: #selector(trackAutomationMenu(_:)), keyEquivalent: "").representedObject = track.id
             menu.addItem(withTitle: L10n.tr("Rename Track"), action: #selector(renameTrackMenu(_:)), keyEquivalent: "").representedObject = track.id
             menu.addItem(withTitle: L10n.tr("Add Track Above"), action: #selector(addTrackAboveMenu(_:)), keyEquivalent: "").representedObject = track.id
             menu.addItem(withTitle: L10n.tr("Add Track Below"), action: #selector(addTrackBelowMenu(_:)), keyEquivalent: "").representedObject = track.id
@@ -1994,6 +1997,7 @@ final class TimelineView: NSView {
             let menu = NSMenu()
             menu.addItem(withTitle: L10n.format("Source: %@", project.asset(id: hit.clip.sourceAssetID)?.displayName ?? L10n.tr("Missing")), action: nil, keyEquivalent: "")
             menu.addItem(.separator())
+            menu.addItem(withTitle: L10n.tr("Clip Pan Automation..."), action: #selector(clipPanAutomationMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             menu.addItem(withTitle: L10n.tr("Rename Clip"), action: #selector(renameClipMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             let colorMenu = NSMenu(title: L10n.tr("Clip Color"))
             for color in ClipColorLabel.allCases {
@@ -2082,6 +2086,13 @@ final class TimelineView: NSView {
         guard let id = sender.representedObject as? UUID else { return }
         onSplitClip?(id, playheadTime)
     }
+    @objc private func trackAutomationMenu(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? UUID { onTrackVolumeAutomation?(id) }
+    }
+    @objc private func clipPanAutomationMenu(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? UUID { onClipPanAutomation?(id) }
+    }
+
     @objc private func renameClipMenu(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UUID else { return }
         onRenameClip?(id)

@@ -48,6 +48,12 @@ enum ExportRange: Codable, Equatable {
         }
     }
 
+    static func parsedTimeRange(start: String, end: String, projectDuration: Double) -> ExportRange? {
+        guard let a = NumericInput.number(start), let b = NumericInput.number(end),
+              projectDuration.isFinite, a >= 0, b > a, b <= projectDuration + 0.0001 else { return nil }
+        return .timeRange(start: a, end: b)
+    }
+
     var start: TimeInterval? {
         if case .timeRange(let start, _) = self { return start }
         return nil

@@ -37,9 +37,23 @@ final class FileReferenceResolver {
         return modificationDate.timeIntervalSince1970
     }
 
-    func markMissingAssets(in project: inout Project, projectURL: URL?) -> [MediaAsset] {
+    func markMissingAssets(in project: inout Project, projectURL: URL?, deferUncachedChecks: Bool = false) -> [MediaAsset] {
+        inspectAssets(in: &project, projectURL: projectURL, deferUncachedChecks: deferUncachedChecks, cancellation: nil)
+    }
+
+    func markMissingAssets(in project: inout Project, projectURL: URL?, deferUncachedChecks: Bool = false,
+                           cancellation: ExportCancellationToken) throws -> [MediaAsset] {
+        let missing = inspectAssets(in: &project, projectURL: projectURL, deferUncachedChecks: deferUncachedChecks, cancellation: cancellation)
+        // Never return a partially inspected document as a successful check.
+        if cancellation.isCancelled { throw CocoaError(.userCancelled) }
+        return missing
+    }
+
+    private func inspectAssets(in project: inout Project, projectURL: URL?, deferUncachedChecks: Bool,
+                               cancellation: ExportCancellationToken?) -> [MediaAsset] {
         var missing: [MediaAsset] = []
         for index in project.assets.indices {
+            if cancellation?.isCancelled == true { break }
             let url = resolvedURL(for: project.assets[index], projectURL: projectURL)
             let exists = FileManager.default.fileExists(atPath: url.path)
             let attributes = exists ? try? FileManager.default.attributesOfItem(atPath: url.path) : nil
@@ -60,27 +74,50 @@ final class FileReferenceResolver {
                 sizeChanged = false
             }
             let sourceChanged = exists && (timestampChanged || sizeChanged)
-            let unavailable = !exists || sourceChanged
+            let expectedChecksum = project.assets[index].metadata.checksum
+            let hasFullIdentity = expectedChecksum?.hasPrefix("sha256:") == true
+            // A timestamp is a verification hint, not a content identity. Full-digest assets
+            // must remain pending until their bytes are verified, even when metadata changed.
+            // Legacy/unverified assets retain their conservative metadata checks.
+            var unavailable = !exists || (!hasFullIdentity && sourceChanged)
+            project.assets[index].isVerifyingSource = false
+            project.assets[index].sourceVerificationFailure = nil
+            if exists, hasFullIdentity, let expected = expectedChecksum {
+                let actual: String?
+                do {
+                    actual = try deferUncachedChecks ? FileMetadataHasher.cachedFullChecksum(for: url)
+                        : FileMetadataHasher.verifiedFullChecksum(for: url, cancellation: cancellation)
+                } catch {
+                    actual = nil
+                    project.assets[index].sourceVerificationFailure = String(reflecting: error)
+                }
+                if let actual { unavailable = actual != expected }
+                else {
+                    unavailable = true
+                    project.assets[index].isVerifyingSource = deferUncachedChecks
+                }
+            }
 
             if !unavailable {
                 // Rebase only after a real source is found. Keeping the old relative reference on
                 // failure lets a collected project recover if its Media folder appears later.
                 project.assets[index].originalPath = url.path
                 project.assets[index].resolvedPath = url.path
-                if project.assets[index].sourceModificationTimestamp == nil {
-                    // Older projects did not persist a fingerprint. Adopt the current source without blocking them.
+                if hasFullIdentity || project.assets[index].sourceModificationTimestamp == nil {
+                    // Refresh full-identity metadata only after the expected digest matched.
+                    // Older projects with no timestamp keep their existing adoption behavior.
                     project.assets[index].sourceModificationTimestamp = currentTimestamp
                 }
             }
             project.assets[index].isMissing = unavailable
             if unavailable {
                 project.assets[index].waveformStatus = .missing
-                if project.assets[index].kind == .videoAudio {
+                if project.assets[index].requiresAudioPreparation {
                     project.assets[index].proxyStatus = .missing
                 }
             } else if project.assets[index].waveformStatus == .missing {
                 project.assets[index].waveformStatus = .notGenerated
-                if project.assets[index].kind == .videoAudio && project.assets[index].proxyStatus == .missing {
+                if project.assets[index].requiresAudioPreparation && project.assets[index].proxyStatus == .missing {
                     project.assets[index].proxyStatus = .generating
                 }
             }

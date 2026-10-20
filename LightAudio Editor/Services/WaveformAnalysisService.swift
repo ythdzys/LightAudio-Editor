@@ -1,47 +1,49 @@
 import Foundation
+import os
 import AVFoundation
 
 final class WaveformAnalysisService {
     private let cacheService = WaveformCacheService()
+    private let scheduler: MediaPreparationScheduler
+    init(scheduler: MediaPreparationScheduler = .shared) {
+        self.scheduler = scheduler
+        memoryCache.totalCostLimit = 24 * 1024 * 1024
+    }
     private let memoryCache = NSCache<NSString, WaveformBox>()
     private let targetPeaksPerSecond = 180.0
     private let minimumPeakCount = 12000
     private let maximumPeakCount = 360000
     private let chunkFrameCount: AVAudioFrameCount = 16384
 
-    func loadOrGenerateWaveform(for asset: MediaAsset, completion: @escaping (Result<WaveformData, Error>) -> Void) {
-        guard !asset.isMissing, let url = asset.audioSourceURL else {
-            completion(.failure(waveformError("Missing media.")))
-            return
-        }
-        let cacheKey = cacheService.cacheKey(for: asset, fileURL: url)
-        if let cached = memoryCache.object(forKey: cacheKey as NSString)?.data {
-            completion(.success(cached))
-            return
-        }
-        if let cached = cacheService.load(cacheKey: cacheKey) {
-            memoryCache.setObject(WaveformBox(cached), forKey: cacheKey as NSString)
-            completion(.success(cached))
-            return
-        }
-
-        DispatchQueue.global(qos: .utility).async {
+    /// Cache I/O and PCM analysis both run inside the shared preparation budget.
+    /// Completion is always asynchronous on main; cancelled jobs cannot publish cache data.
+    @discardableResult
+    func loadOrGenerateWaveform(for asset: MediaAsset, completion: @escaping (Result<WaveformData, Error>) -> Void) -> MediaPreparationScheduler.Job {
+        scheduler.submit { job, finished in
+            defer { finished() }
+            guard !job.isCancelled else { return }
             do {
-                let waveform = try self.generateWaveform(asset: asset, url: url, cacheKey: cacheKey)
-                try self.cacheService.save(waveform)
-                self.memoryCache.setObject(WaveformBox(waveform), forKey: cacheKey as NSString)
-                DispatchQueue.main.async { completion(.success(waveform)) }
+                guard !asset.isMissing, let url = asset.audioSourceURL else {
+                    throw self.waveformError(L10n.tr("Missing media."))
+                }
+                let cacheKey = self.cacheService.cacheKey(for: asset, fileURL: url)
+                let waveform: WaveformData
+                if let cached = self.memoryCache.object(forKey: cacheKey as NSString)?.data {
+                    waveform = cached
+                } else if let cached = self.cacheService.load(cacheKey: cacheKey) {
+                    waveform = cached
+                } else {
+                    waveform = try self.generateWaveform(asset: asset, url: url, cacheKey: cacheKey, job: job)
+                    do { try job.unlessCancelled { try self.cacheService.save(waveform) } }
+                    catch { throw self.contextualError(error, message: L10n.format("Could not save waveform cache: %@", error.localizedDescription)) }
+                }
+                job.unlessCancelled {
+                    self.memoryCache.setObject(WaveformBox(waveform), forKey: cacheKey as NSString,
+                                               cost: waveform.peaks.count * MemoryLayout<WaveformPeak>.stride)
+                }
+                DispatchQueue.main.async { if !job.isCancelled { completion(.success(waveform)) } }
             } catch {
-                let detail = "Could not generate a waveform for \(asset.metadata.fileName): \(error.localizedDescription)"
-                let contextualError = NSError(
-                    domain: "LightAudioWaveform",
-                    code: (error as NSError).code,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: detail,
-                        NSUnderlyingErrorKey: error
-                    ]
-                )
-                DispatchQueue.main.async { completion(.failure(contextualError)) }
+                DispatchQueue.main.async { if !job.isCancelled { completion(.failure(error)) } }
             }
         }
     }
@@ -58,11 +60,35 @@ final class WaveformAnalysisService {
         try? cacheService.delete(cacheKey: key)
     }
 
-    private func generateWaveform(asset: MediaAsset, url: URL, cacheKey: String) throws -> WaveformData {
-        let file = try AVAudioFile(forReading: url)
+    private func generateWaveform(asset: MediaAsset, url: URL, cacheKey: String, job: MediaPreparationScheduler.Job) throws -> WaveformData {
+        let trace = OSSignpostID(log: MediaPreparationScheduler.log)
+        os_signpost(.begin, log: MediaPreparationScheduler.log, name: "Waveform analysis", signpostID: trace)
+        defer { os_signpost(.end, log: MediaPreparationScheduler.log, name: "Waveform analysis", signpostID: trace) }
+        let file: AVAudioFile
+        do { file = try AVAudioFile(forReading: url) }
+        catch { throw contextualError(error, message: L10n.format("Could not open audio for waveform generation: %@", error.localizedDescription)) }
         let format = file.processingFormat
-        let totalFrames = max(1, Int(file.length))
-        let sampleRate = format.sampleRate > 0 ? format.sampleRate : asset.metadata.sampleRate
+        var totalFrames = max(1, Int(file.length))
+        var sampleRate = format.sampleRate > 0 ? format.sampleRate : asset.metadata.sampleRate
+        var channelCount = Int(format.channelCount)
+        // AVAudioFile on iPadOS 27 rejects the final partial block in some valid
+        // FLAC streams. Decode FLAC independently; never silently discard its tail.
+        #if os(iOS)
+        let flac = file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatFLAC
+            ? url.withUnsafeFileSystemRepresentation { la_flac_open($0) } : nil
+        defer { if let flac { la_flac_close(flac) } }
+        if file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatFLAC {
+            guard let flac else { throw waveformError(L10n.tr("Could not open FLAC audio for waveform generation.")) }
+            let count = la_flac_frame_count(flac)
+            // A zero STREAMINFO count means unknown; use the system's length if available.
+            totalFrames = count > 0 ? Int(count) : Int(file.length)
+            sampleRate = Double(la_flac_sample_rate(flac))
+            channelCount = Int(la_flac_channels(flac))
+            guard totalFrames > 0, sampleRate > 0 else {
+                throw waveformError(L10n.tr("Could not determine the FLAC audio length."))
+            }
+        }
+        #endif
         let duration = sampleRate > 0 ? Double(totalFrames) / sampleRate : asset.metadata.duration
         let targetPeakCount = peakCount(forDuration: duration, totalFrames: totalFrames)
         let framesPerPeak = max(1, Int(ceil(Double(totalFrames) / Double(targetPeakCount))))
@@ -75,23 +101,36 @@ final class WaveformAnalysisService {
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrameCount) else {
             throw waveformError(L10n.tr("Could not allocate waveform buffer."))
         }
-        let channelCount = Int(format.channelCount)
         guard channelCount > 0 else {
             throw waveformError(L10n.tr("This audio file has no readable channels."))
         }
 
-        while file.framePosition < file.length {
-            try file.read(into: buffer, frameCount: chunkFrameCount)
-            let framesRead = Int(buffer.frameLength)
-            guard framesRead > 0 else { break }
-            guard let channels = buffer.floatChannelData else {
-                throw waveformError(L10n.tr("Unsupported audio sample format."))
+        var position = 0
+        var samples = [Float](repeating: 0, count: Int(chunkFrameCount) * channelCount)
+        while position < totalFrames {
+            if job.isCancelled { throw CancellationError() }
+            let requested = min(Int(chunkFrameCount), totalFrames - position)
+            let framesRead: Int
+            #if os(iOS)
+            if let flac {
+                framesRead = samples.withUnsafeMutableBufferPointer {
+                    Int(la_flac_read(flac, UInt64(requested), $0.baseAddress))
+                }
+            } else {
+                framesRead = try readNative(file, buffer: buffer, requested: requested, samples: &samples)
             }
+            #else
+            framesRead = try readNative(file, buffer: buffer, requested: requested, samples: &samples)
+            #endif
+            guard framesRead > 0 else {
+                throw waveformError(L10n.tr("Audio ended before waveform generation was complete."))
+            }
+            position += framesRead
             for frame in 0..<framesRead {
                 var frameMin = Float.greatestFiniteMagnitude
                 var frameMax = -Float.greatestFiniteMagnitude
                 for channel in 0..<channelCount {
-                    let sample = sanitize(channels[channel][frame])
+                    let sample = sanitize(samples[frame * channelCount + channel])
                     frameMin = min(frameMin, sample)
                     frameMax = max(frameMax, sample)
                 }
@@ -121,6 +160,23 @@ final class WaveformAnalysisService {
         )
     }
 
+    private func readNative(_ file: AVAudioFile, buffer: AVAudioPCMBuffer, requested: Int, samples: inout [Float]) throws -> Int {
+        let position = file.framePosition
+        do { try file.read(into: buffer, frameCount: AVAudioFrameCount(requested)) }
+        catch {
+            throw contextualError(error, message: L10n.format("Could not read audio for waveform generation at frame %lld of %lld: %@", position, file.length, error.localizedDescription))
+        }
+        guard let channels = buffer.floatChannelData else {
+            throw waveformError(L10n.tr("Unsupported audio sample format."))
+        }
+        let channelCount = Int(buffer.format.channelCount)
+        let framesRead = Int(buffer.frameLength)
+        for frame in 0..<framesRead {
+            for channel in 0..<channelCount { samples[frame * channelCount + channel] = channels[channel][frame] }
+        }
+        return framesRead
+    }
+
     private func peakCount(forDuration duration: TimeInterval, totalFrames: Int) -> Int {
         guard duration.isFinite, duration > 0 else {
             return min(totalFrames, min(maximumPeakCount, minimumPeakCount))
@@ -143,6 +199,10 @@ final class WaveformAnalysisService {
 
     private func waveformError(_ message: String) -> NSError {
         NSError(domain: "LightAudioWaveform", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    private func contextualError(_ error: Error, message: String) -> NSError {
+        NSError(domain: "LightAudioWaveform", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: message, NSUnderlyingErrorKey: error])
     }
 }
 

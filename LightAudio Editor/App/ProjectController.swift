@@ -1,4 +1,7 @@
+import Foundation
+#if canImport(AppKit)
 import AppKit
+#endif
 import AVFoundation
 
 protocol ProjectControllerDelegate: AnyObject {
@@ -62,10 +65,13 @@ final class ProjectController {
     private let waveformService = WaveformAnalysisService()
     private var waveformData: [UUID: WaveformData] = [:]
     private var waveformGenerationIDs: Set<UUID> = []
+    private var waveformJobs: [UUID: MediaPreparationScheduler.Job] = [:]
     private var proxyGenerationTasks: [UUID: MediaProxyService.ProxyGenerationHandle] = [:]
     private var proxyGenerationRequestIDs: [UUID: UUID] = [:]
     private var mediaCacheGeneration = 0
     private var projectGeneration = 0
+    private var sourceVerificationTasks: [UUID: ExportCancellationToken] = [:]
+    private let sourceVerificationQueue = DispatchQueue(label: "com.lightaudio.source-verification", qos: .utility)
     private var importingMediaPaths: [String: Int] = [:]
     private var continuousUndoSession: ContinuousUndoSession?
     private var continuousEditMediaAvailability: Bool?
@@ -90,13 +96,20 @@ final class ProjectController {
     /// This updates only transient availability state; it does not mark the project as edited.
     @discardableResult
     func refreshMediaAvailability() -> [MediaAsset] {
+        let previousTimestamps = project.assets.map(\.sourceModificationTimestamp)
+        let previouslyVerifyingIDs = Set(project.assets.filter { $0.isVerifyingSource }.map(\.id))
         let previouslyMissingIDs = Set(project.missingAssets.map(\.id))
-        let missing = resolver.markMissingAssets(in: &project, projectURL: projectURL)
+        let missing = resolver.markMissingAssets(in: &project, projectURL: projectURL, deferUncachedChecks: true)
         let currentlyMissingIDs = Set(project.missingAssets.map(\.id))
 
-        guard previouslyMissingIDs != currentlyMissingIDs else { return missing }
+        startSourceVerifications()
+        let currentlyVerifyingIDs = Set(project.assets.filter { $0.isVerifyingSource }.map(\.id))
+        guard previouslyMissingIDs != currentlyMissingIDs || previouslyVerifyingIDs != currentlyVerifyingIDs
+                || previousTimestamps != project.assets.map(\.sourceModificationTimestamp) else { return missing }
 
         for id in currentlyMissingIDs {
+            cancelWaveformGeneration(for: id)
+            cancelProxyGeneration(for: id)
             waveformData.removeValue(forKey: id)
         }
         notify()
@@ -115,7 +128,13 @@ final class ProjectController {
     init(
         recoveryService: AutosaveRecoveryService,
         proxyService: MediaProxyService = MediaProxyService(),
-        undoManagerProvider: @escaping () -> UndoManager? = { NSApp.mainWindow?.undoManager }
+        undoManagerProvider: @escaping () -> UndoManager? = {
+            #if canImport(AppKit)
+            return NSApp.mainWindow?.undoManager
+            #else
+            return nil
+            #endif
+        }
     ) {
         self.recoveryService = recoveryService
         self.proxyService = proxyService
@@ -124,6 +143,20 @@ final class ProjectController {
         recoveryService.isDirtyProvider = { [weak self] in self?.isDirty ?? false }
         recoveryService.start(projectURL: nil)
         captureSaveCheckpoint()
+    }
+
+    func renameProject(_ name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != project.name else { return }
+        registerUndo("Rename Project")
+        project.name = name
+        notify()
+    }
+
+    deinit {
+        sourceVerificationTasks.values.forEach { $0.cancel() }
+        waveformJobs.values.forEach { $0.cancel() }
+        proxyGenerationTasks.values.forEach { $0.cancel() }
     }
 
     func newProject() {
@@ -138,9 +171,10 @@ final class ProjectController {
         notify()
     }
 
-    func open(url: URL) {
+    @discardableResult
+    func open(url: URL) -> Bool {
         do {
-            let (loaded, missing) = try fileService.load(from: url)
+            let (loaded, missing) = try fileService.load(from: url, deferUncachedChecks: true)
             recoveryService.discardSnapshot(forProjectID: project.id)
             resetTransientProjectState()
             project = loaded
@@ -151,18 +185,22 @@ final class ProjectController {
             recoveryService.updateProjectURL(url)
             notify()
             prepareAvailableAssets()
-            if !missing.isEmpty {
-                delegate?.projectController(self, didFindMissingAssets: missing)
+            let confirmedMissing = missing.filter { !$0.isVerifyingSource }
+            if !confirmedMissing.isEmpty {
+                delegate?.projectController(self, didFindMissingAssets: confirmedMissing)
             }
+            return true
         } catch {
             delegate?.projectController(self, didFailWith: error)
+            return false
         }
     }
 
-    func restore(snapshot: ProjectRecoverySnapshot) {
+    @discardableResult
+    func restore(snapshot: ProjectRecoverySnapshot) -> Bool {
         do {
             var recoveredProject = snapshot.project
-            let missing = try fileService.prepareForOpening(&recoveredProject, projectURL: snapshot.originalProjectURL)
+            let missing = try fileService.prepareForOpening(&recoveredProject, projectURL: snapshot.originalProjectURL, deferUncachedChecks: true)
             resetTransientProjectState()
             project = recoveredProject
             sanitizeCrossfades()
@@ -173,11 +211,14 @@ final class ProjectController {
             recoveryService.updateProjectURL(projectURL)
             notify()
             prepareAvailableAssets()
-            if !missing.isEmpty {
-                delegate?.projectController(self, didFindMissingAssets: missing)
+            let confirmedMissing = missing.filter { !$0.isVerifyingSource }
+            if !confirmedMissing.isEmpty {
+                delegate?.projectController(self, didFindMissingAssets: confirmedMissing)
             }
+            return true
         } catch {
             delegate?.projectController(self, didFailWith: error)
+            return false
         }
     }
 
@@ -244,13 +285,16 @@ final class ProjectController {
             guard importGeneration == self.projectGeneration else { return }
             switch result {
             case .success(let asset):
-                if let existing = self.existingAsset(for: url) {
+                if let existing = self.existingAsset(for: url) ?? self.project.assets.first(where: {
+                    !$0.isMissing && asset.metadata.checksum?.hasPrefix("sha256:") == true &&
+                    $0.metadata.checksum == asset.metadata.checksum
+                }) {
                     completion?(.duplicate(existing))
                     return
                 }
                 self.registerUndo("Import Media")
                 var asset = asset
-                asset.waveformStatus = asset.kind == .videoAudio ? .notGenerated : .generating
+                asset.waveformStatus = asset.requiresAudioPreparation ? .notGenerated : .generating
                 asset.waveformFailureReason = nil
                 self.project.assets.append(asset)
                 if addToTimeline {
@@ -312,7 +356,7 @@ final class ProjectController {
             createdTrackNames: createdTrackNames,
             wasTrackClamped: requestedTrack != targetTrack,
             mediaWasMissing: asset.isMissing,
-            proxyIsPreparing: asset.kind == .videoAudio && asset.proxyStatus != .ready
+            proxyIsPreparing: asset.requiresAudioPreparation && asset.proxyStatus != .ready
         )
     }
 
@@ -418,7 +462,9 @@ final class ProjectController {
                 trailingClipID: trailingID,
                 startTime: crossfade.startTime,
                 duration: crossfade.duration,
-                curve: crossfade.curve
+                curve: crossfade.curve,
+                startProgress: crossfade.startProgress,
+                endProgress: crossfade.endProgress
             )
         }
         project.timeline.tracks.insert(copy, at: index + 1)
@@ -505,7 +551,7 @@ final class ProjectController {
     }
 
     func moveClip(_ clipID: UUID, to newStart: TimeInterval, trackIndex: Int? = nil) {
-        guard requireAllMediaOnline() else { return }
+        guard requireAllMediaOnline(), newStart.isFinite else { return }
         if selectedClipIDs.contains(clipID), selectedClipIDs.count > 1 {
             guard let location = locateClip(clipID) else { return }
             let targetTrack = min(max(trackIndex ?? location.track, 0), project.timeline.tracks.count - 1)
@@ -521,6 +567,8 @@ final class ProjectController {
             showLockedTrackError()
             return
         }
+        let duration = project.timeline.tracks[location.track].clips[location.clip].duration
+        guard TimelineViewState.isValidTimelineTime(max(0, newStart) + duration) else { return }
         registerUndo("Move Clip")
         var clip = project.timeline.tracks[location.track].clips.remove(at: location.clip)
         clip.timelineStart = max(0, newStart)
@@ -568,6 +616,8 @@ final class ProjectController {
             showLockedTrackError()
             return
         }
+        let proposedOffset = max(0, playheadTime) - earliest
+        guard clipboard.items.allSatisfy({ TimelineViewState.isValidTimelineTime($0.clip.timelineStart + $0.clip.duration + proposedOffset) }) else { return }
         registerUndo("Paste Clips")
         while project.timeline.tracks.count <= maxTrack {
             project.timeline.tracks.append(Track(name: nextTrackName()))
@@ -591,7 +641,7 @@ final class ProjectController {
     }
 
     func addMarkerAtPlayhead() {
-        guard requireAllMediaOnline() else { return }
+        guard requireAllMediaOnline(), TimelineViewState.isValidTimelineTime(playheadTime) else { return }
         registerUndo("Add Marker")
         let index = project.timeline.markers.count + 1
         project.timeline.markers.append(TimelineMarker(time: playheadTime, name: "Marker \(index)"))
@@ -633,7 +683,7 @@ final class ProjectController {
     func setInPoint(at time: TimeInterval? = nil) {
         guard requireAllMediaOnline() else { return }
         registerUndo("Set In Point")
-        let value = max(0, time ?? playheadTime)
+        let value = TimelineViewState.clampedTimelineTime(time ?? playheadTime) ?? 0
         project.viewState.inPoint = value
         if let outPoint = project.viewState.outPoint, outPoint < value {
             project.viewState.inPoint = outPoint
@@ -645,7 +695,7 @@ final class ProjectController {
     func setOutPoint(at time: TimeInterval? = nil) {
         guard requireAllMediaOnline() else { return }
         registerUndo("Set Out Point")
-        let value = max(0, time ?? playheadTime)
+        let value = TimelineViewState.clampedTimelineTime(time ?? playheadTime) ?? 0
         project.viewState.outPoint = value
         if let inPoint = project.viewState.inPoint, value < inPoint {
             project.viewState.inPoint = value
@@ -698,7 +748,7 @@ final class ProjectController {
         deleteTrack(trackID, allowNonEmpty: false)
     }
 
-    func trimClip(_ clipID: UUID, edge: TimelineView.TrimEdge, to timelineTime: TimeInterval) {
+    func trimClip(_ clipID: UUID, edge: TimelineTrimEdge, to timelineTime: TimeInterval) {
         guard requireAllMediaOnline() else { return }
         guard clipIsEditable(clipID) else { return }
         let sourceDuration = locateClip(clipID).flatMap { location in
@@ -753,11 +803,11 @@ final class ProjectController {
         right.sourceStart = clip.sourceStart + offset
         clip.sourceEnd = clip.sourceStart + offset
 
-        // The new split boundary must not inherit the source clip's outer-edge fades.
-        clip.fadeIn = Fade(duration: min(originalFadeIn.duration, clip.duration), curve: originalFadeIn.curve)
-        clip.fadeOut = Fade()
-        right.fadeIn = Fade()
-        right.fadeOut = Fade(duration: min(originalFadeOut.duration, right.duration), curve: originalFadeOut.curve)
+        // Retain each curve's original progress interval, including splits inside a fade.
+        clip.fadeIn = originalFadeIn.segment(from: 0, through: clip.duration)
+        right.fadeIn = originalFadeIn.segment(from: offset, through: offset + right.duration)
+        clip.fadeOut = originalFadeOut.segment(from: right.duration, through: right.duration + clip.duration)
+        right.fadeOut = originalFadeOut.segment(from: 0, through: right.duration)
 
         let volumeAutomation = splitVolumeAutomation(
             originalVolumeAutomation,
@@ -779,7 +829,18 @@ final class ProjectController {
         right.panAutomationKeyframes = panAutomation.right
         project.timeline.tracks[location.track].clips[location.clip] = clip
         project.timeline.tracks[location.track].clips.insert(right, at: location.clip + 1)
-        removeCrossfades(involving: [clip.id])
+        project.timeline.crossfades = project.timeline.crossfades.flatMap { crossfade -> [Crossfade] in
+            guard crossfade.leadingClipID == clip.id || crossfade.trailingClipID == clip.id else { return [crossfade] }
+            var pieces: [Crossfade] = []
+            for half in [clip, right] {
+                guard var piece = crossfade.segment(from: half.timelineStart, through: half.timelineStart + half.duration) else { continue }
+                if crossfade.leadingClipID == clip.id { piece.leadingClipID = half.id }
+                else { piece.trailingClipID = half.id }
+                if !pieces.isEmpty { piece.id = UUID() }
+                pieces.append(piece)
+            }
+            return pieces
+        }
         sanitizeCrossfades()
         selectedClipIDs = [right.id]
         project.recalculateDuration()
@@ -813,30 +874,30 @@ final class ProjectController {
     func setClipFadeIn(_ duration: TimeInterval) {
         guard requireAllMediaOnline() else { return }
         updateSelectedClips(actionName: "Fade In") { clip in
-            clip.fadeIn.duration = min(max(0, duration), clip.duration)
+            clip.fadeIn = Fade(duration: min(max(0, duration), clip.duration), curve: clip.fadeIn.curve)
         }
     }
 
     func setClipFadeOut(_ duration: TimeInterval) {
         guard requireAllMediaOnline() else { return }
         updateSelectedClips(actionName: "Fade Out") { clip in
-            clip.fadeOut.duration = min(max(0, duration), clip.duration)
+            clip.fadeOut = Fade(duration: min(max(0, duration), clip.duration), curve: clip.fadeOut.curve)
         }
     }
 
-    func setClipFade(clipID: UUID, edge: TimelineView.TrimEdge, duration: TimeInterval) {
+    func setClipFade(clipID: UUID, edge: TimelineTrimEdge, duration: TimeInterval) {
         guard requireAllMediaOnline() else { return }
         updateClip(clipID, actionName: edge == .left ? "Fade In" : "Fade Out") { clip in
             switch edge {
             case .left:
-                clip.fadeIn.duration = min(max(0, duration), clip.duration)
+                clip.fadeIn = Fade(duration: min(max(0, duration), clip.duration), curve: clip.fadeIn.curve)
             case .right:
-                clip.fadeOut.duration = min(max(0, duration), clip.duration)
+                clip.fadeOut = Fade(duration: min(max(0, duration), clip.duration), curve: clip.fadeOut.curve)
             }
         }
     }
 
-    func setClipFadeCurve(edge: TimelineView.TrimEdge, curve: FadeCurve) {
+    func setClipFadeCurve(edge: TimelineTrimEdge, curve: FadeCurve) {
         guard requireAllMediaOnline() else { return }
         updateSelectedClips(actionName: edge == .left ? "Fade In Curve" : "Fade Out Curve") { clip in
             switch edge {
@@ -848,7 +909,7 @@ final class ProjectController {
         }
     }
 
-    func setClipFadeCurve(clipID: UUID, edge: TimelineView.TrimEdge, curve: FadeCurve) {
+    func setClipFadeCurve(clipID: UUID, edge: TimelineTrimEdge, curve: FadeCurve) {
         guard requireAllMediaOnline() else { return }
         updateClip(clipID, actionName: edge == .left ? "Fade In Curve" : "Fade Out Curve") { clip in
             switch edge {
@@ -860,7 +921,7 @@ final class ProjectController {
         }
     }
 
-    func applyFadeToSelected(edge: TimelineView.TrimEdge, duration: TimeInterval, curve: FadeCurve) {
+    func applyFadeToSelected(edge: TimelineTrimEdge, duration: TimeInterval, curve: FadeCurve) {
         guard requireAllMediaOnline() else { return }
         updateSelectedClips(actionName: edge == .left ? "Apply Fade In" : "Apply Fade Out") { clip in
             let clampedDuration = min(max(0, duration), clip.duration)
@@ -1013,7 +1074,70 @@ final class ProjectController {
         }
     }
 
-    func normalizeClip(clipID: UUID, targetPeakDB: Double, completion: @escaping (Result<Double, Error>) -> Void) {
+    // The automation editors share the cross-platform project keyframes.
+    func addPanKeyframe(clipID: UUID, time: TimeInterval, pan: Double) {
+        guard time.isFinite, pan.isFinite else { return }
+        updateClip(clipID, actionName: "Add Pan Keyframe") { clip in
+            let point = ClipPanAutomationKeyframe(time: time, pan: pan).clamped(maxTime: clip.duration)
+            if let index = clip.panAutomationKeyframes.firstIndex(where: { abs($0.time - point.time) < 0.02 }) {
+                clip.panAutomationKeyframes[index].pan = point.pan
+            } else { clip.panAutomationKeyframes.append(point) }
+            clip.panAutomationKeyframes.sort { $0.time < $1.time }
+        }
+    }
+
+    func movePanKeyframe(clipID: UUID, keyframeID: UUID, time: TimeInterval, pan: Double) {
+        guard time.isFinite, pan.isFinite else { return }
+        updateClip(clipID, actionName: "Move Pan Keyframe") { clip in
+            guard let index = clip.panAutomationKeyframes.firstIndex(where: { $0.id == keyframeID }) else { return }
+            clip.panAutomationKeyframes[index] = ClipPanAutomationKeyframe(id: keyframeID, time: time, pan: pan).clamped(maxTime: clip.duration)
+            clip.panAutomationKeyframes.sort { $0.time < $1.time }
+        }
+    }
+
+    func deletePanKeyframe(clipID: UUID, keyframeID: UUID) {
+        updateClip(clipID, actionName: "Delete Pan Keyframe") { $0.panAutomationKeyframes.removeAll { $0.id == keyframeID } }
+    }
+
+    func clearPanAutomation(clipID: UUID) {
+        updateClip(clipID, actionName: "Clear Pan Automation") { $0.panAutomationKeyframes.removeAll() }
+    }
+
+    func addTrackVolumeKeyframe(trackID: UUID, time: TimeInterval, gainDB: Double) {
+        guard time.isFinite, time <= TimelineViewState.maximumTimelineTime, gainDB.isFinite else { return }
+        updateTrackAutomation(trackID, actionName: "Add Track Volume Keyframe") { track in
+            let point = TrackVolumeAutomationKeyframe(time: time, gainDB: gainDB).clamped()
+            if let index = track.volumeAutomationKeyframes.firstIndex(where: { abs($0.time - point.time) < 0.02 }) {
+                track.volumeAutomationKeyframes[index].gainDB = point.gainDB
+            } else { track.volumeAutomationKeyframes.append(point) }
+            track.volumeAutomationKeyframes.sort { $0.time < $1.time }
+        }
+    }
+
+    func moveTrackVolumeKeyframe(trackID: UUID, keyframeID: UUID, time: TimeInterval, gainDB: Double) {
+        guard time.isFinite, time <= TimelineViewState.maximumTimelineTime, gainDB.isFinite else { return }
+        updateTrackAutomation(trackID, actionName: "Move Track Volume Keyframe") { track in
+            guard let index = track.volumeAutomationKeyframes.firstIndex(where: { $0.id == keyframeID }) else { return }
+            track.volumeAutomationKeyframes[index] = TrackVolumeAutomationKeyframe(id: keyframeID, time: time, gainDB: gainDB).clamped()
+            track.volumeAutomationKeyframes.sort { $0.time < $1.time }
+        }
+    }
+
+    func deleteTrackVolumeKeyframe(trackID: UUID, keyframeID: UUID) {
+        updateTrackAutomation(trackID, actionName: "Delete Track Volume Keyframe") { $0.volumeAutomationKeyframes.removeAll { $0.id == keyframeID } }
+    }
+
+    func clearTrackVolumeAutomation(trackID: UUID) {
+        updateTrackAutomation(trackID, actionName: "Clear Track Volume Automation") { $0.volumeAutomationKeyframes.removeAll() }
+    }
+
+    private func updateTrackAutomation(_ trackID: UUID, actionName: String, _ body: (inout Track) -> Void) {
+        guard let track = project.timeline.tracks.first(where: { $0.id == trackID }) else { return }
+        guard !track.isLocked else { showLockedTrackError(); return }
+        updateTrack(trackID, actionName: actionName, audioChanged: true, body)
+    }
+
+    func normalizeClip(clipID: UUID, targetPeakDB: Double, cancellationToken: ExportCancellationToken = ExportCancellationToken(), completion: @escaping (Result<Double, Error>) -> Void) {
         guard requireAllMediaOnline() else {
             completion(.failure(projectError(code: 56, message: L10n.tr("Relink missing media before editing this project."))))
             return
@@ -1032,13 +1156,14 @@ final class ProjectController {
         let analyzedSourcePath = url.standardizedFileURL.path
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let peak = try self.analyzePeak(for: clip, audioURL: url)
+                let peak = try self.analyzePeak(for: clip, audioURL: url, cancellationToken: cancellationToken)
                 guard peak > 0.000001 else {
                     throw self.projectError(code: 52, message: L10n.tr("Cannot normalize silent clip."))
                 }
-                let targetLinear = MixMath.linearGain(forDB: targetDB)
+                let targetLinear = pow(10, targetDB / 20) // dBFS has no fader-style mute sentinel.
                 let newGain = MixMath.clampClipGainLinear(targetLinear / peak)
                 DispatchQueue.main.async {
+                    guard !cancellationToken.isCancelled else { completion(.failure(CancellationError())); return }
                     guard self.requireAllMediaOnline() else {
                         completion(.failure(self.projectError(code: 56, message: L10n.tr("Relink missing media before editing this project."))))
                         return
@@ -1077,13 +1202,14 @@ final class ProjectController {
         guard requireAllMediaOnline() else { return }
         let selected = selectedEditableClipLocations()
         guard !selected.isEmpty else { return }
-        registerUndo(selected.count == 1 ? "Duplicate Clip" : "Duplicate Clips")
         let originals = selected.map { (track: $0.track, clip: project.timeline.tracks[$0.track].clips[$0.clip]) }
         let originalIDs = Set(originals.map { $0.clip.id })
         let copiedCrossfades = crossfadesContained(in: originalIDs)
         let earliestStart = originals.map { $0.clip.timelineStart }.min() ?? 0
         let latestEnd = originals.map { $0.clip.timelineStart + $0.clip.duration }.max() ?? earliestStart
         let timelineOffset = max(0.05, latestEnd - earliestStart)
+        guard TimelineViewState.isValidTimelineTime(latestEnd + timelineOffset) else { return }
+        registerUndo(selected.count == 1 ? "Duplicate Clip" : "Duplicate Clips")
         var newIDs: Set<UUID> = []
         var copiedIDs: [UUID: UUID] = [:]
         for original in originals {
@@ -1188,6 +1314,7 @@ final class ProjectController {
         assetID: UUID,
         replacementURL: URL,
         allowingMetadataWarnings: Bool = false,
+        expectedReplacementChecksum: String? = nil,
         completion: @escaping (RelinkResult) -> Void
     ) {
         guard let asset = project.assets.first(where: { $0.id == assetID }) else {
@@ -1213,6 +1340,10 @@ final class ProjectController {
                       let current = self.project.assets.first(where: { $0.id == assetID }),
                       current.originalPath == expectedOriginalPath else {
                     completion(RelinkResult(accepted: false, reason: L10n.tr("The project changed before media verification completed."), updatedAsset: nil))
+                    return
+                }
+                if let expectedReplacementChecksum, result.updatedAsset?.metadata.checksum != expectedReplacementChecksum {
+                    completion(RelinkResult(accepted: false, reason: L10n.tr("The replacement changed after review. Choose it again."), updatedAsset: nil))
                     return
                 }
                 completion(self.applyRelinkResult(result, to: assetID, allowingMetadataWarnings: allowingMetadataWarnings))
@@ -1304,6 +1435,7 @@ final class ProjectController {
 
     func regenerateWaveform(assetID: UUID) {
         guard let index = project.assets.firstIndex(where: { $0.id == assetID }) else { return }
+        cancelWaveformGeneration(for: assetID)
         waveformService.invalidateCache(for: project.assets[index])
         waveformData.removeValue(forKey: assetID)
         project.assets[index].waveformFailureReason = nil
@@ -1312,7 +1444,7 @@ final class ProjectController {
             notify()
             return
         }
-        if project.assets[index].kind == .videoAudio && project.assets[index].proxyStatus != .ready {
+        if project.assets[index].requiresAudioPreparation && project.assets[index].proxyStatus != .ready {
             prepareAsset(assetID)
             return
         }
@@ -1322,8 +1454,9 @@ final class ProjectController {
     }
 
     func regenerateAudioProxy(assetID: UUID) {
-        guard let index = project.assets.firstIndex(where: { $0.id == assetID }), project.assets[index].kind == .videoAudio else { return }
+        guard let index = project.assets.firstIndex(where: { $0.id == assetID }), project.assets[index].requiresAudioPreparation else { return }
         cancelProxyGeneration(for: assetID)
+        cancelWaveformGeneration(for: assetID)
         waveformService.invalidateCache(for: project.assets[index])
         proxyService.invalidateProxy(for: project.assets[index])
         waveformData.removeValue(forKey: assetID)
@@ -1338,7 +1471,7 @@ final class ProjectController {
 
     func cancelAudioProxyGeneration(assetID: UUID) {
         guard let index = project.assets.firstIndex(where: { $0.id == assetID }),
-              project.assets[index].kind == .videoAudio,
+              project.assets[index].requiresAudioPreparation,
               proxyGenerationTasks[assetID] != nil else {
             return
         }
@@ -1356,24 +1489,30 @@ final class ProjectController {
     }
 
     func removeAssetIfUnused(assetID: UUID) {
-        guard requireAllMediaOnline() else { return }
         guard !project.timeline.tracks.contains(where: { track in track.clips.contains(where: { $0.sourceAssetID == assetID }) }) else {
             delegate?.projectController(self, didFailWith: NSError(domain: "LightAudio", code: 32, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Remove clips that use this media before removing it from the project.")]))
             return
         }
         guard let index = project.assets.firstIndex(where: { $0.id == assetID }) else { return }
         registerUndo("Remove Media")
+        sourceVerificationTasks.removeValue(forKey: assetID)?.cancel()
+        cancelWaveformGeneration(for: assetID); cancelProxyGeneration(for: assetID)
+        waveformData.removeValue(forKey: assetID)
         project.assets.remove(at: index)
         notify()
     }
 
     @discardableResult
     func removeUnusedMedia() -> Int {
-        guard requireAllMediaOnline() else { return 0 }
         let used = usageCountsByAssetID()
         let unusedIDs = Set(project.assets.filter { used[$0.id, default: 0] == 0 }.map(\.id))
         guard !unusedIDs.isEmpty else { return 0 }
         registerUndo("Remove Unused Media")
+        for id in unusedIDs {
+            sourceVerificationTasks.removeValue(forKey: id)?.cancel()
+            cancelWaveformGeneration(for: id); cancelProxyGeneration(for: id)
+            waveformData.removeValue(forKey: id)
+        }
         project.assets.removeAll { unusedIDs.contains($0.id) }
         notify()
         return unusedIDs.count
@@ -1407,17 +1546,21 @@ final class ProjectController {
     }
 
     func regenerateAllVideoProxies() {
-        project.assets.filter { $0.kind == .videoAudio }.map(\.id).forEach { regenerateAudioProxy(assetID: $0) }
+        project.assets.filter { $0.requiresAudioPreparation }.map(\.id).forEach { regenerateAudioProxy(assetID: $0) }
     }
 
     func clearApplicationCaches(completion: @escaping (Result<ApplicationCacheClearResult, Error>) -> Void) {
+        guard recoveryService.latestRecoverableSnapshot() == nil else {
+            completion(.failure(projectError(code: 62, message: L10n.tr("Resolve the pending recovery before clearing caches."))))
+            return
+        }
         recoveryService.setSnapshotWritesSuspended(true)
         invalidateAssetPreparation()
 
         for index in project.assets.indices {
             if project.assets[index].isMissing {
                 project.assets[index].waveformStatus = .missing
-                if project.assets[index].kind == .videoAudio {
+                if project.assets[index].requiresAudioPreparation {
                     project.assets[index].proxyStatus = .missing
                 }
                 continue
@@ -1426,7 +1569,7 @@ final class ProjectController {
             project.assets[index].waveformCacheKey = nil
             project.assets[index].waveformStatus = .notGenerated
             project.assets[index].waveformFailureReason = nil
-            if project.assets[index].kind == .videoAudio {
+            if project.assets[index].requiresAudioPreparation {
                 project.assets[index].proxyPath = nil
                 project.assets[index].proxyCacheKey = nil
                 project.assets[index].proxyFailureReason = nil
@@ -1447,64 +1590,137 @@ final class ProjectController {
         }
     }
 
+    /// An independent document owns all library sources and starts a new editing history.
+    func saveIndependentCopy(snapshot: ProjectMediaCollectionSnapshot, to folder: URL, name: String,
+                             cancellation: ExportCancellationToken = ExportCancellationToken(),
+                             progress: @escaping (Double) -> Void = { _ in }) throws -> URL {
+        var copy = snapshot.project
+        copy.id = UUID()
+        copy.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !copy.name.isEmpty else { throw projectError(code: 63, message: L10n.tr("Enter a project name.")) }
+        return try collectProjectMedia(snapshot: .init(project: copy, projectURL: snapshot.projectURL),
+                                       to: folder, videoAudioOnly: false, cancellation: cancellation, progress: progress)
+    }
+
     func makeProjectMediaCollectionSnapshot() -> ProjectMediaCollectionSnapshot {
         ProjectMediaCollectionSnapshot(project: project, projectURL: projectURL)
     }
 
-    func collectProjectMedia(to destinationFolder: URL) throws -> URL {
-        try collectProjectMedia(snapshot: makeProjectMediaCollectionSnapshot(), to: destinationFolder)
+    func collectProjectMedia(to destinationFolder: URL, videoAudioOnly: Bool = true,
+                             cancellation: ExportCancellationToken = ExportCancellationToken()) throws -> URL {
+        try collectProjectMedia(snapshot: makeProjectMediaCollectionSnapshot(), to: destinationFolder,
+                                videoAudioOnly: videoAudioOnly, cancellation: cancellation)
     }
 
-    /// This method deliberately uses an immutable project snapshot so collection cannot observe
-    /// a half-edited project while media files are being copied on a background queue.
-    func collectProjectMedia(snapshot: ProjectMediaCollectionSnapshot, to destinationFolder: URL) throws -> URL {
-        let project = snapshot.project
-        let projectURL = snapshot.projectURL
-        let usedIDs = Set(project.timeline.tracks.flatMap { $0.clips.map(\.sourceAssetID) })
-        let usedAssets = project.assets.filter { usedIDs.contains($0.id) }
-        let missing = usedAssets.filter { $0.isMissing || !FileManager.default.fileExists(atPath: resolver.resolvedURL(for: $0, projectURL: projectURL).path) }
-        guard missing.isEmpty else {
-            throw NSError(
-                domain: "LightAudio",
-                code: 41,
-                userInfo: [NSLocalizedDescriptionKey: L10n.format(missing.count == 1 ? "Cannot collect project: %d file is missing." : "Cannot collect project: %d files are missing.", missing.count)]
-            )
-        }
-
+    /// Collect the entire library from an immutable snapshot. Publish only a verified, complete
+    /// folder; neither the live document nor the original media is modified by this operation.
+    func collectProjectMedia(snapshot: ProjectMediaCollectionSnapshot, to destinationFolder: URL,
+                             videoAudioOnly: Bool = true,
+                             cancellation: ExportCancellationToken = ExportCancellationToken(),
+                             progress: (Double) -> Void = { _ in }) throws -> URL {
         let manager = FileManager.default
-        let packageURL = uniqueFolderURL(in: destinationFolder, baseName: "\(project.name) Collected")
-        let mediaURL = packageURL.appendingPathComponent("Media", isDirectory: true)
-        try manager.createDirectory(at: mediaURL, withIntermediateDirectories: true)
-
-        var copiedPathsByAssetID: [UUID: URL] = [:]
-        var usedFileNames = Set<String>()
-        for asset in usedAssets {
-            let sourceURL = resolver.resolvedURL(for: asset, projectURL: projectURL)
-            let targetName = uniqueFileName(for: sourceURL.lastPathComponent, usedNames: &usedFileNames)
-            let targetURL = mediaURL.appendingPathComponent(targetName)
-            try manager.copyItem(at: sourceURL, to: targetURL)
-            copiedPathsByAssetID[asset.id] = targetURL
+        let resolver = FileReferenceResolver()
+        let fileService = ProjectFileService()
+        func checkCancellation() throws {
+            if cancellation.isCancelled { throw CocoaError(.userCancelled) }
         }
-
-        var collectedProject = project
-        let projectFileURL = packageURL.appendingPathComponent("\(safeFileName(project.name)).liau")
-        collectedProject.assets.removeAll { !usedIDs.contains($0.id) }
-        for index in collectedProject.assets.indices {
-            guard let copiedURL = copiedPathsByAssetID[collectedProject.assets[index].id] else { continue }
-            collectedProject.assets[index].originalPath = copiedURL.path
-            collectedProject.assets[index].resolvedPath = copiedURL.path
-            collectedProject.assets[index].relativePath = resolver.relativePath(for: copiedURL, projectURL: projectFileURL)
-            collectedProject.assets[index].sourceModificationTimestamp = resolver.sourceModificationTimestamp(for: copiedURL)
-            collectedProject.assets[index].isMissing = false
-            collectedProject.assets[index].proxyPath = nil
-            collectedProject.assets[index].proxyCacheKey = nil
-            collectedProject.assets[index].proxyStatus = collectedProject.assets[index].kind == .videoAudio ? .generating : .none
-            collectedProject.assets[index].waveformCacheKey = nil
-            collectedProject.assets[index].waveformStatus = .notGenerated
-            collectedProject.assets[index].waveformFailureReason = nil
+        func mediaChanged() -> Error {
+            NSError(domain: "LightAudio", code: 21, userInfo: [NSLocalizedDescriptionKey:
+                L10n.tr("Source media changed during verification. Try opening it again.")])
         }
-        try fileService.save(collectedProject, to: projectFileURL)
-        return projectFileURL
+        try checkCancellation()
+        var project = snapshot.project
+        let missing = try resolver.markMissingAssets(in: &project, projectURL: snapshot.projectURL, cancellation: cancellation)
+        guard missing.isEmpty, !snapshot.project.hasMissingAssets else {
+            let count = max(missing.count, snapshot.project.missingAssets.count)
+            throw NSError(domain: "LightAudio", code: 41, userInfo: [NSLocalizedDescriptionKey:
+                L10n.format(count == 1 ? "Cannot collect project: %d file is missing." : "Cannot collect project: %d files are missing.", count)])
+        }
+        try fileService.validateForRendering(project)
+        // Full digests also protect old projects while a copy or decoder is in flight.
+        var sourceDigests: [UUID: String] = [:]
+        for asset in project.assets {
+            let source = resolver.resolvedURL(for: asset, projectURL: snapshot.projectURL)
+            let digest = try FileMetadataHasher.fullChecksum(for: source, cancellation: cancellation)
+            if let expected = asset.metadata.checksum {
+                let matches = expected.hasPrefix("sha256:") ? digest == expected
+                    : try FileMetadataHasher.matches(expected, url: source, cancellation: cancellation)
+                guard matches else { throw mediaChanged() }
+            }
+            sourceDigests[asset.id] = digest
+        }
+        let staging = destinationFolder.appendingPathComponent(".LightAudio-\(UUID().uuidString).partial", isDirectory: true)
+        try manager.createDirectory(at: staging, withIntermediateDirectories: false)
+        defer { try? manager.removeItem(at: staging) }
+        let media = staging.appendingPathComponent("Media", isDirectory: true)
+        try manager.createDirectory(at: media, withIntermediateDirectories: false)
+        let document = staging.appendingPathComponent("\(safeFileName(project.name)).liau")
+        var collected = project
+        var names = Set<String>()
+        for index in collected.assets.indices {
+            try checkCancellation()
+            let asset = project.assets[index]
+            let source = resolver.resolvedURL(for: asset, projectURL: snapshot.projectURL)
+            let audioOnly = videoAudioOnly && asset.kind == .videoAudio
+            let name = audioOnly ? source.deletingPathExtension().lastPathComponent + ".caf" : source.lastPathComponent
+            let destination = media.appendingPathComponent(uniqueFileName(for: name, usedNames: &names))
+            if audioOnly {
+                collected.assets[index].metadata = try MediaProxyService(proxyDirectory: media)
+                    .exportLosslessAudio(from: source, to: destination, cancellation: cancellation)
+                collected.assets[index].kind = .audio
+            } else {
+                // Chunked copying bounds memory and lets Cancel interrupt a large video copy.
+                let input = try FileHandle(forReadingFrom: source)
+                defer { try? input.close() }
+                guard manager.createFile(atPath: destination.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+                let output = try FileHandle(forWritingTo: destination)
+                defer { try? output.close() }
+                while true {
+                    let copied = try autoreleasepool { () throws -> Bool in
+                        try checkCancellation()
+                        let data = try FileMetadataHasher.readData(input)
+                        if data.isEmpty { return false }
+                        try FileMetadataHasher.writeData(data, to: output)
+                        return true
+                    }
+                    if !copied { break }
+                }
+                try output.close()
+                let digest = try FileMetadataHasher.fullChecksum(for: destination, cancellation: cancellation)
+                guard digest == sourceDigests[asset.id] else { throw mediaChanged() }
+                collected.assets[index].metadata.checksum = digest
+                collected.assets[index].metadata.fileName = destination.lastPathComponent
+            }
+            guard try FileMetadataHasher.fullChecksum(for: source, cancellation: cancellation) == sourceDigests[asset.id] else { throw mediaChanged() }
+            collected.assets[index].originalPath = destination.path
+            collected.assets[index].resolvedPath = nil
+            collected.assets[index].relativePath = resolver.relativePath(for: destination, projectURL: document)
+            collected.assets[index].sourceModificationTimestamp = resolver.sourceModificationTimestamp(for: destination)
+            collected.assets[index].isMissing = false
+            collected.assets[index].proxyPath = nil
+            collected.assets[index].proxyCacheKey = nil
+            collected.assets[index].proxyStatus = .none
+            collected.assets[index].proxyFailureReason = nil
+            collected.assets[index].waveformCacheKey = nil
+            collected.assets[index].waveformStatus = .notGenerated
+            collected.assets[index].waveformFailureReason = nil
+            progress(Double(index + 1) / Double(max(1, collected.assets.count)))
+        }
+        for asset in project.assets {
+            let source = resolver.resolvedURL(for: asset, projectURL: snapshot.projectURL)
+            guard try FileMetadataHasher.fullChecksum(for: source, cancellation: cancellation) == sourceDigests[asset.id] else { throw mediaChanged() }
+        }
+        try fileService.validateForRendering(collected)
+        try checkCancellation()
+        let package = uniqueFolderURL(in: destinationFolder, baseName: "\(project.name) Collected")
+        let publishedDocument = package.appendingPathComponent(document.lastPathComponent)
+        for index in collected.assets.indices {
+            collected.assets[index].originalPath = package.appendingPathComponent(collected.assets[index].relativePath!).path
+        }
+        try fileService.save(collected, to: document)
+        try checkCancellation()
+        try manager.moveItem(at: staging, to: package)
+        return publishedDocument
     }
 
     private func insertTrack(at index: Int, actionName: String) {
@@ -1550,11 +1766,11 @@ final class ProjectController {
         let ext = url.pathExtension
         var candidate = ext.isEmpty ? base : "\(base).\(ext)"
         var suffix = 2
-        while usedNames.contains(candidate) {
+        while usedNames.contains(candidate.lowercased()) {
             candidate = ext.isEmpty ? "\(base) \(suffix)" : "\(base) \(suffix).\(ext)"
             suffix += 1
         }
-        usedNames.insert(candidate)
+        usedNames.insert(candidate.lowercased())
         return candidate
     }
 
@@ -1576,7 +1792,7 @@ final class ProjectController {
     }
 
     private static func mediaFilesByName(in folder: URL) -> [String: [URL]] {
-        let keys: Set<URLResourceKey> = [.isRegularFileKey]
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey]
         guard let enumerator = FileManager.default.enumerator(
             at: folder,
             includingPropertiesForKeys: Array(keys),
@@ -1588,20 +1804,25 @@ final class ProjectController {
         var result: [String: [URL]] = [:]
         for case let url as URL in enumerator {
             let values = try? url.resourceValues(forKeys: keys)
-            guard values?.isRegularFile == true else { continue }
+            if values?.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+            guard values?.isRegularFile == true,
+                  AudioFormatHelpers.supportedImportExtension(url.pathExtension) else { continue }
             result[url.lastPathComponent, default: []].append(url)
         }
         return result
     }
 
-    private func analyzePeak(for clip: Clip, audioURL: URL) throws -> Double {
+    private func analyzePeak(for clip: Clip, audioURL: URL, cancellationToken: ExportCancellationToken) throws -> Double {
         let file = try AVAudioFile(forReading: audioURL)
         let sampleRate = file.processingFormat.sampleRate
-        let startFrame = max(0, AVAudioFramePosition(clip.sourceStart * sampleRate))
-        let requestedFrames = max(0, AVAudioFramePosition(clip.duration * sampleRate))
-        let availableFrames = max(0, file.length - startFrame)
-        var remaining = min(requestedFrames, availableFrames)
-        guard remaining > 0 else {
+        // Match the renderer's source bounds: include frames intersecting the
+        // trimmed interval, snapping floating-point noise at exact boundaries.
+        // Derive the exclusive end independently; truncating duration can lose
+        // the last peak, and truncating sourceStart can include an earlier peak.
+        let startFrame = min(file.length, max(0, AVAudioFramePosition(AudioFrameMath.floor(clip.sourceStart * sampleRate))))
+        let endFrame = min(file.length, max(startFrame, AVAudioFramePosition(AudioFrameMath.ceiling(clip.sourceEnd * sampleRate))))
+        var remaining = endFrame - startFrame
+        guard clip.duration > 0, remaining > 0 else {
             throw projectError(code: 53, message: L10n.tr("The selected clip has no readable audio."))
         }
         guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 16384) else {
@@ -1610,6 +1831,7 @@ final class ProjectController {
         file.framePosition = startFrame
         var peak = 0.0
         while remaining > 0 {
+            if cancellationToken.isCancelled { throw CancellationError() }
             let frames = AVAudioFrameCount(min(Int64(buffer.frameCapacity), remaining))
             try file.read(into: buffer, frameCount: frames)
             let frameCount = Int(buffer.frameLength)
@@ -1619,7 +1841,7 @@ final class ProjectController {
             }
             for channel in 0..<Int(buffer.format.channelCount) {
                 for frame in 0..<frameCount {
-                    peak = max(peak, abs(Double(channels[channel][frame])))
+                    if channels[channel][frame].isFinite { peak = max(peak, abs(Double(channels[channel][frame]))) }
                 }
             }
             remaining -= AVAudioFramePosition(frameCount)
@@ -1663,7 +1885,9 @@ final class ProjectController {
         let selected = selectedEditableClipLocations()
         guard !selected.isEmpty else { return }
         let minStart = selected.map { project.timeline.tracks[$0.track].clips[$0.clip].timelineStart }.min() ?? 0
-        let safeDelta = max(deltaTime, -minStart)
+        guard deltaTime.isFinite else { return }
+        let maxEnd = selected.map { project.timeline.tracks[$0.track].clips[$0.clip].timelineStart + project.timeline.tracks[$0.track].clips[$0.clip].duration }.max() ?? 0
+        let safeDelta = min(TimelineViewState.maximumTimelineTime - maxEnd, max(deltaTime, -minStart))
         let canMove = selected.allSatisfy { location in
             let targetTrack = location.track + trackDelta
             return targetTrack >= 0 && targetTrack < project.timeline.tracks.count && !project.timeline.tracks[targetTrack].isLocked
@@ -1713,7 +1937,9 @@ final class ProjectController {
         if let actionName = actionName {
             registerUndo(actionName)
         }
-        upsertCrossfade(crossfade)
+        if actionName != nil || !project.timeline.crossfades.contains(where: { sameClipPair($0, crossfade) && $0.isPartial }) {
+            upsertCrossfade(crossfade)
+        }
         sanitizeCrossfades()
         notify(audioChanged: true)
         return true
@@ -1776,8 +2002,22 @@ final class ProjectController {
         var candidates: [Crossfade] = []
         var seenPairs = Set<String>()
         for crossfade in project.timeline.crossfades {
-            guard let adjusted = crossfadeBetween(crossfade.leadingClipID, crossfade.trailingClipID, curve: crossfade.curve) else {
-                continue
+            let adjusted: Crossfade
+            if crossfade.isPartial {
+                guard crossfade.leadingClipID != crossfade.trailingClipID,
+                      let leading = locateClip(crossfade.leadingClipID), let trailing = locateClip(crossfade.trailingClipID),
+                      leading.track == trailing.track else { continue }
+                let first = project.timeline.tracks[leading.track].clips[leading.clip]
+                let second = project.timeline.tracks[trailing.track].clips[trailing.clip]
+                let start = max(first.timelineStart, second.timelineStart)
+                let end = min(first.timelineStart + first.duration, second.timelineStart + second.duration)
+                guard end > start else { continue }
+                var partial = crossfade
+                partial.startTime = start; partial.duration = end - start
+                adjusted = partial // Keep roles: a split can put the outgoing half after the incoming clip.
+            } else {
+                guard let full = crossfadeBetween(crossfade.leadingClipID, crossfade.trailingClipID, curve: crossfade.curve) else { continue }
+                adjusted = full
             }
             let key = pairKey(adjusted.leadingClipID, adjusted.trailingClipID)
             guard !seenPairs.contains(key) else { continue }
@@ -1894,7 +2134,9 @@ final class ProjectController {
                     trailingClipID: trailingID,
                     startTime: max(0, crossfade.startTime + timelineOffset),
                     duration: crossfade.duration,
-                    curve: crossfade.curve
+                    curve: crossfade.curve,
+                    startProgress: crossfade.startProgress,
+                    endProgress: crossfade.endProgress
                 )
             )
         }
@@ -1918,7 +2160,64 @@ final class ProjectController {
         Set(selectedEditableClipLocations().map { project.timeline.tracks[$0.track].clips[$0.clip].id })
     }
 
+    private func startSourceVerifications() {
+        for asset in project.assets where asset.isVerifyingSource && sourceVerificationTasks[asset.id] == nil {
+            let url = resolver.resolvedURL(for: asset, projectURL: projectURL)
+            let generation = projectGeneration, expected = asset.metadata.checksum
+            let token = ExportCancellationToken()
+            sourceVerificationTasks[asset.id] = token
+            sourceVerificationQueue.async { [weak self] in
+                let result = Result { try FileMetadataHasher.verifiedFullChecksum(for: url, cancellation: token) }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, !token.isCancelled, self.projectGeneration == generation,
+                          self.sourceVerificationTasks[asset.id] === token else { return }
+                    self.sourceVerificationTasks.removeValue(forKey: asset.id)
+                    guard let index = self.project.assets.firstIndex(where: { $0.id == asset.id }),
+                          self.project.assets[index].metadata.checksum == expected,
+                          self.resolver.resolvedURL(for: self.project.assets[index], projectURL: self.projectURL) == url else { return }
+                    switch result {
+                    case .success:
+                        _ = self.refreshMediaAvailability()
+                        let current = self.project.assets[index]
+                        if current.isMissing && !current.isVerifyingSource {
+                            self.delegate?.projectController(self, didFindMissingAssets: [current])
+                        }
+                    case .failure(let error):
+                        self.project.assets[index].isVerifyingSource = false
+                        self.project.assets[index].isMissing = true
+                        self.notify()
+                        self.delegate?.projectController(self, didFailWith: error)
+                    }
+                }
+            }
+        }
+    }
+
+    private func cancelWaveformGeneration(for assetID: UUID) {
+        waveformJobs.removeValue(forKey: assetID)?.cancel()
+        waveformGenerationIDs.remove(assetID)
+    }
+
+    private func enforceWaveformBudget() {
+        let total = waveformData.values.reduce(0) { $0 + $1.peaks.count }
+        let budget = 24 * 1024 * 1024 / MemoryLayout<WaveformPeak>.stride
+        guard total > budget else { return }
+        let perAsset = max(1, budget / max(1, waveformData.count))
+        for id in Array(waveformData.keys) {
+            guard var data = waveformData[id], data.peaks.count > perAsset else { continue }
+            let groupSize = Int(ceil(Double(data.peaks.count) / Double(perAsset)))
+            var peaks: [WaveformPeak] = []
+            for start in stride(from: 0, to: data.peaks.count, by: groupSize) {
+                let group = data.peaks[start..<min(start + groupSize, data.peaks.count)]
+                peaks.append(WaveformPeak(min: group.map(\.min).min() ?? 0, max: group.map(\.max).max() ?? 0))
+            }
+            data.peaks = peaks
+            waveformData[id] = data
+        }
+    }
+
     private func prepareAvailableAssets() {
+        _ = refreshMediaAvailability()
         for asset in project.assets where !asset.isMissing {
             prepareAsset(asset.id)
         }
@@ -1926,7 +2225,7 @@ final class ProjectController {
 
     private func prepareAsset(_ assetID: UUID) {
         guard let asset = project.assets.first(where: { $0.id == assetID }) else { return }
-        if asset.kind == .videoAudio {
+        if asset.requiresAudioPreparation {
             startProxyGeneration(for: assetID)
         } else {
             startWaveformGeneration(for: assetID)
@@ -1936,6 +2235,7 @@ final class ProjectController {
     private func invalidateAssetPreparation() {
         mediaCacheGeneration &+= 1
         waveformData.removeAll()
+        waveformJobs.values.forEach { $0.cancel() }; waveformJobs.removeAll()
         waveformGenerationIDs.removeAll()
         let tasks = Array(proxyGenerationTasks.values)
         proxyGenerationTasks.removeAll()
@@ -1950,6 +2250,7 @@ final class ProjectController {
     }
 
     private func resetTransientProjectState() {
+        sourceVerificationTasks.values.forEach { $0.cancel() }; sourceVerificationTasks.removeAll()
         projectGeneration &+= 1
         importingMediaPaths.removeAll()
         clipClipboard = nil
@@ -1965,15 +2266,24 @@ final class ProjectController {
               result.accepted else {
             return result
         }
+        var candidate = project
+        candidate.assets[index] = updatedAsset
+        do { try fileService.validateForRendering(candidate) }
+        catch { return RelinkResult(accepted: false, reason: error.localizedDescription, updatedAsset: nil) }
         guard allowingMetadataWarnings || !result.requiresConfirmation else {
             return result
         }
 
         registerUndo("Relink Media")
+        sourceVerificationTasks.removeValue(forKey: assetID)?.cancel()
+        cancelProxyGeneration(for: assetID)
+        waveformGenerationIDs.remove(assetID)
+        cancelWaveformGeneration(for: assetID)
+        waveformData.removeValue(forKey: assetID)
         var updated = updatedAsset
-        updated.waveformStatus = updated.kind == .videoAudio ? .notGenerated : .generating
+        updated.waveformStatus = updated.requiresAudioPreparation ? .notGenerated : .generating
         updated.waveformFailureReason = nil
-        updated.proxyStatus = updated.kind == .videoAudio ? .generating : .none
+        updated.proxyStatus = updated.requiresAudioPreparation ? .generating : .none
         project.assets[index] = updated
         notify(audioChanged: true)
         prepareAsset(updated.id)
@@ -1989,7 +2299,7 @@ final class ProjectController {
             notify()
             return
         }
-        guard asset.kind == .videoAudio else {
+        guard asset.requiresAudioPreparation else {
             startWaveformGeneration(for: assetID)
             return
         }
@@ -2020,6 +2330,7 @@ final class ProjectController {
             }
             switch result {
             case .success(let updated):
+                self.project.assets[currentIndex].metadata = updated.metadata
                 self.project.assets[currentIndex].proxyPath = updated.proxyPath
                 self.project.assets[currentIndex].proxyCacheKey = updated.proxyCacheKey
                 self.project.assets[currentIndex].proxyStatus = .ready
@@ -2032,7 +2343,7 @@ final class ProjectController {
                 self.project.assets[currentIndex].proxyStatus = .failed
                 self.project.assets[currentIndex].proxyFailureReason = error.localizedDescription
                 self.project.assets[currentIndex].waveformStatus = .failed
-                self.project.assets[currentIndex].waveformFailureReason = "Audio proxy generation failed: \(error.localizedDescription)"
+                self.project.assets[currentIndex].waveformFailureReason = L10n.format("Audio proxy generation failed: %@", error.localizedDescription)
                 self.waveformData.removeValue(forKey: assetID)
                 self.notify()
             }
@@ -2049,7 +2360,7 @@ final class ProjectController {
             notify()
             return
         }
-        guard asset.kind != .videoAudio || asset.proxyStatus == .ready else { return }
+        guard !asset.requiresAudioPreparation || asset.proxyStatus == .ready else { return }
         guard !waveformGenerationIDs.contains(assetID) else { return }
 
         asset.waveformStatus = .generating
@@ -2059,9 +2370,10 @@ final class ProjectController {
         waveformGenerationIDs.insert(assetID)
 
         let cacheGeneration = mediaCacheGeneration
-        waveformService.loadOrGenerateWaveform(for: asset) { [weak self] result in
+        waveformJobs[assetID] = waveformService.loadOrGenerateWaveform(for: asset) { [weak self] result in
             guard let self = self else { return }
             guard cacheGeneration == self.mediaCacheGeneration else { return }
+            self.waveformJobs.removeValue(forKey: assetID)
             self.waveformGenerationIDs.remove(assetID)
             guard let currentIndex = self.project.assets.firstIndex(where: { $0.id == assetID }) else { return }
             guard !self.project.assets[currentIndex].isMissing else {
@@ -2073,6 +2385,7 @@ final class ProjectController {
             switch result {
             case .success(let data):
                 self.waveformData[assetID] = data
+                self.enforceWaveformBudget()
                 self.project.assets[currentIndex].waveformCacheKey = data.cacheKey
                 self.project.assets[currentIndex].waveformStatus = .ready
                 self.project.assets[currentIndex].waveformFailureReason = nil
@@ -2120,6 +2433,10 @@ final class ProjectController {
 
     private func validateAllMediaOnline() -> Bool {
         let missingAssets = refreshMediaAvailability()
+        if missingAssets.contains(where: { $0.isVerifyingSource }) {
+            delegate?.projectController(self, didFailWith: NSError(domain: "LightAudio", code: 21, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Source verification is in progress. Try again when it finishes.")]))
+            return false
+        }
         guard missingAssets.isEmpty else {
             let names = missingAssets.map { $0.metadata.fileName }.joined(separator: "\n")
             let error = NSError(
@@ -2213,6 +2530,9 @@ final class ProjectController {
         let oldPlayhead = playheadTime
         isDirty = true
         guard let undoManager = undoManagerProvider() else { return }
+        let ownsGroup = !undoManager.groupsByEvent && undoManager.groupingLevel == 0
+        if ownsGroup { undoManager.beginUndoGrouping() }
+        defer { if ownsGroup { undoManager.endUndoGrouping() } }
         undoManager.registerUndo(withTarget: self) { target in
             target.registerUndo(name)
             target.project = oldProject
@@ -2251,31 +2571,7 @@ final class ProjectController {
     }
 
     private func editableProjectFingerprint(_ value: Project) -> Data? {
-        var copy = value
-        copy.lastSavedAt = nil
-        copy.viewState.zoom = TimelineViewState.defaultZoom
-        copy.viewState.horizontalScroll = 0
-        for index in copy.assets.indices {
-            copy.assets[index].resolvedPath = nil
-            copy.assets[index].waveformCacheKey = nil
-            copy.assets[index].waveformStatus = .notGenerated
-            copy.assets[index].waveformFailureReason = nil
-            copy.assets[index].proxyPath = nil
-            copy.assets[index].proxyCacheKey = nil
-            copy.assets[index].proxyStatus = .none
-            copy.assets[index].proxyFailureReason = nil
-            copy.assets[index].isMissing = false
-        }
-        for trackIndex in copy.timeline.tracks.indices {
-            for clipIndex in copy.timeline.tracks[trackIndex].clips.indices {
-                copy.timeline.tracks[trackIndex].clips[clipIndex].isSelected = false
-            }
-        }
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return try? encoder.encode(copy)
+        ProjectFileService.editableProjectFingerprint(value)
     }
 
     private func normalizedProjectURLPath(_ url: URL?) -> String? {

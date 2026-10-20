@@ -1,6 +1,7 @@
 import AppKit
 
 final class MainWindowController: NSWindowController, ProjectControllerDelegate, NSWindowDelegate {
+    private var automationEditor: AutomationEditorController?
     private let projectController: ProjectController
     private let playbackEngine = AudioPlaybackEngine()
     private let exportService = ExportService()
@@ -226,6 +227,12 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         timelineView.onAddMarker = { [weak self] in self?.projectController.addMarkerAtPlayhead() }
         timelineView.onDeleteMarker = { [weak self] id in self?.projectController.deleteMarker(id) }
         timelineView.onRenameMarker = { [weak self] id in self?.renameMarker(markerID: id) }
+        timelineView.onTrackVolumeAutomation = { [weak self] id in self?.showAutomation(.trackVolume(id)) }
+        timelineView.onClipPanAutomation = { [weak self] id in self?.showAutomation(.clipPan(id)) }
+        inspector.onPanAutomation = { [weak self] in
+            guard let self, let id = self.projectController.selectedClipID else { return }
+            self.showAutomation(.clipPan(id))
+        }
         timelineView.onRenameClip = { [weak self] id in self?.renameClip(clipID: id) }
         timelineView.onSetClipColor = { [weak self] id, color in
             self?.projectController.setClipColor(id, color: color)
@@ -419,6 +426,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         timelineView.playheadTime = projectController.playheadTime
         timelineView.trackLevels = displayedTrackLevels
         inspector.update(project: project, selectedClipIDs: projectController.selectedClipIDs)
+        automationEditor?.refresh()
         timeLabel.stringValue = Timecode.string(projectController.playheadTime)
         masterVolumeSlider.doubleValue = project.mixState.masterVolumeDB
         masterVolumeLabel.stringValue = String(format: "%.0f dB", project.mixState.masterVolumeDB)
@@ -527,21 +535,54 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     @objc func saveProject(_ sender: Any?) {
-        if !projectController.save() {
-            saveProjectAs(sender)
-        } else {
-            showStatus(L10n.tr("Project saved"))
+        guard projectController.projectURL != nil else {
+            let panel = NSSavePanel()
+            panel.allowedFileTypes = ["liau"]
+            panel.nameFieldStringValue = "\(projectController.project.name).liau"
+            panel.beginSheetModal(for: window!) { [weak self] response in
+                guard response == .OK, let url = panel.url else { return }
+                if self?.projectController.save(to: url) == true { self?.showStatus(L10n.tr("Project saved")) }
+            }
+            return
         }
+        if projectController.save() { showStatus(L10n.tr("Project saved")) }
     }
 
     @objc func saveProjectAs(_ sender: Any?) {
-        let panel = NSSavePanel()
-        panel.allowedFileTypes = ["liau"]
-        panel.nameFieldStringValue = "\(projectController.project.name).liau"
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = L10n.tr("Save Copy")
+        panel.message = L10n.tr("Choose a folder for an independent project copy with all library media.")
+        let name = NSTextField(string: projectController.project.name)
+        name.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        name.setAccessibilityLabel(L10n.tr("Project name"))
+        panel.accessoryView = name
         panel.beginSheetModal(for: window!) { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            if self?.projectController.save(to: url) == true {
-                self?.showStatus(L10n.tr("Project saved"))
+            guard let self, response == .OK, let folder = panel.url else { return }
+            let snapshot = self.projectController.makeProjectMediaCollectionSnapshot()
+            let copyName = name.stringValue
+            let token = ExportCancellationToken(), progress = ExportProgressController()
+            progress.onCancel = { token.cancel() }
+            self.window?.beginSheet(progress.window!)
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = Result { try self.projectController.saveIndependentCopy(snapshot: snapshot, to: folder,
+                    name: copyName, cancellation: token) { value in
+                        DispatchQueue.main.async { progress.update(progress: value) }
+                    }
+                }
+                DispatchQueue.main.async {
+                    self.window?.endSheet(progress.window!)
+                    switch result {
+                    case .success(let url):
+                        if self.projectController.open(url: url) {
+                            self.window?.undoManager?.removeAllActions()
+                            self.showStatus(L10n.tr("Project copy saved"))
+                        }
+                    case .failure(let error):
+                        if !token.isCancelled { self.showError(error.localizedDescription) }
+                    }
+                }
             }
         }
     }
@@ -760,9 +801,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     @objc func collectProjectMedia(_ sender: Any?) {
-        let missingCount = projectController.project.assets.filter { asset in
-            projectController.usageCountsByAssetID()[asset.id, default: 0] > 0 && asset.isMissing
-        }.count
+        let missingCount = projectController.project.missingAssets.count
         guard missingCount == 0 else {
             showError(L10n.format(missingCount == 1 ? "Cannot collect project: %d file is missing." : "Cannot collect project: %d files are missing.", missingCount))
             return
@@ -773,21 +812,54 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = L10n.tr("Collect")
+        let audioOnly = NSButton(checkboxWithTitle: L10n.tr("Audio only for video files"), target: nil, action: nil)
+        audioOnly.state = .on
+        audioOnly.setAccessibilityIdentifier("export.projectVideoAudioOnly")
+        let details = NSTextField(wrappingLabelWithString: L10n.tr("Exports the project and every media item in its library, including unused media."))
+        let accessory = NSStackView(views: [details])
+        accessory.orientation = .vertical
+        accessory.alignment = .leading
+        accessory.spacing = 8
+        details.widthAnchor.constraint(equalTo: accessory.widthAnchor).isActive = true
+        if projectController.project.assets.contains(where: { $0.kind == .videoAudio }) {
+            accessory.addArrangedSubview(audioOnly)
+            let explanation = NSTextField(wrappingLabelWithString: L10n.tr("Replace videos with lossless audio in the exported copy. Keeps the audio quality, timing, and edits. Size savings depend on the source. Turn off to include the original video files."))
+            explanation.textColor = .secondaryLabelColor
+            accessory.addArrangedSubview(explanation)
+            explanation.widthAnchor.constraint(equalTo: accessory.widthAnchor).isActive = true
+        }
+        accessory.widthAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
+        panel.accessoryView = accessory
+        panel.isAccessoryViewDisclosed = true
         panel.beginSheetModal(for: window!) { [weak self] response in
             guard response == .OK, let folder = panel.url, let self = self else { return }
             let snapshot = self.projectController.makeProjectMediaCollectionSnapshot()
+            let videoAudioOnly = audioOnly.state == .on
+            let cancellation = ExportCancellationToken()
+            let progress = ExportProgressController()
+            progress.onCancel = { cancellation.cancel() }
+            self.window?.beginSheet(progress.window!)
             self.showStatus(L10n.tr("Collecting project media..."))
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    let projectURL = try self.projectController.collectProjectMedia(snapshot: snapshot, to: folder)
+                    let projectURL = try self.projectController.collectProjectMedia(snapshot: snapshot, to: folder,
+                        videoAudioOnly: videoAudioOnly, cancellation: cancellation) { value in
+                            DispatchQueue.main.async { progress.update(progress: value) }
+                        }
                     DispatchQueue.main.async {
+                        self.window?.endSheet(progress.window!)
                         self.showStatus(L10n.tr("Collected project media"))
                         self.showInfo(L10n.format("Collected project media:\n%@", projectURL.path))
                     }
                 } catch {
                     DispatchQueue.main.async {
-                        self.showStatus(L10n.tr("Collect project failed"))
-                        self.showError(error.localizedDescription)
+                        self.window?.endSheet(progress.window!)
+                        if cancellation.isCancelled {
+                            self.showStatus(L10n.tr("Export cancelled."))
+                        } else {
+                            self.showStatus(L10n.tr("Collect project failed"))
+                            self.showError(error.localizedDescription)
+                        }
                     }
                 }
             }
@@ -1102,7 +1174,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         setClippingIndicator(active: false)
         resetMeters()
         showStatus(L10n.tr("Preparing playback..."))
-        playbackEngine.play(project: projectController.project, from: playbackStart, endingAt: playbackEnd) { [weak self] result in
+        let completed: (Result<Void, Error>) -> Void = { [weak self] result in
             guard let self else { return }
             switch result {
             case .success:
@@ -1117,6 +1189,11 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 self.showStatus(L10n.tr("Playback failed"))
                 self.showError(error.localizedDescription)
             }
+        }
+        if let range = activeLoopRange() {
+            playbackEngine.playLoop(project: projectController.project, from: playbackStart, range: range, completion: completed)
+        } else {
+            playbackEngine.play(project: projectController.project, from: playbackStart, endingAt: playbackEnd, completion: completed)
         }
         updateToolbarLabels()
     }
@@ -1224,7 +1301,8 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 self.projectController.relinkAsync(
                     assetID: assetID,
                     replacementURL: replacementURL,
-                    allowingMetadataWarnings: true
+                    allowingMetadataWarnings: true,
+                    expectedReplacementChecksum: result.updatedAsset?.metadata.checksum
                 ) { [weak self] confirmed in
                     guard let self else { return }
                     if confirmed.accepted {
@@ -1359,6 +1437,14 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         }
     }
 
+    private func showAutomation(_ target: AutomationTarget) {
+        automationEditor?.close()
+        let editor = AutomationEditorController(controller: projectController, target: target)
+        automationEditor = editor
+        editor.showWindow(self)
+        editor.window?.makeKeyAndOrderFront(self)
+    }
+
     private func renameClip(clipID: UUID) {
         guard let clip = projectController.project.timeline.tracks.flatMap({ $0.clips }).first(where: { $0.id == clipID }) else { return }
         let alert = NSAlert()
@@ -1404,7 +1490,16 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         alert.beginSheetModal(for: window!) { [weak self] response in
             guard response == .alertFirstButtonReturn, let self = self else { return }
             self.showStatus(L10n.tr("Analyzing clip peak..."))
-            self.projectController.normalizeClip(clipID: clipID, targetPeakDB: field.doubleValue) { [weak self] result in
+            guard let target = NumericInput.number(field.stringValue), target.isFinite, (-60...0).contains(target) else {
+                self.showError(L10n.tr("Enter a target between -60 and 0 dBFS.")); return
+            }
+            let token = ExportCancellationToken(), progress = ExportProgressController()
+            progress.showActivity(L10n.tr("Analyzing clip peak..."))
+            progress.onCancel = { token.cancel() }
+            self.window?.beginSheet(progress.window!)
+            self.projectController.normalizeClip(clipID: clipID, targetPeakDB: target, cancellationToken: token) { [weak self] result in
+                self?.window?.endSheet(progress.window!)
+                guard !token.isCancelled else { return }
                 switch result {
                 case .success(let gainDB):
                     self?.showStatus(L10n.format("Normalized clip to %.1f dB gain", gainDB))
@@ -1528,6 +1623,10 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     private func showMissingMediaBlockedMessage(action: String) {
+        if projectController.project.assets.contains(where: { $0.isVerifyingSource }) {
+            showStatus(L10n.tr("Source verification is in progress. Try again when it finishes."))
+            return
+        }
         let names = projectController.project.missingAssets.map { $0.metadata.fileName }.joined(separator: "\n")
         showStatus(L10n.format("Missing media must be relinked before %@", action))
         showError(L10n.format("Relink missing media before you %@ this project:\n%@", action, names))
@@ -1591,6 +1690,10 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 break
             }
         }
+    }
+
+    func prepareForProjectReplacement(_ proceed: @escaping () -> Void) {
+        confirmDiscardChanges(proceed)
     }
 
     private func confirmDiscardChanges(_ proceed: @escaping () -> Void) {

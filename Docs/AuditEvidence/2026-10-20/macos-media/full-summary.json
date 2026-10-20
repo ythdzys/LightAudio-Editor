@@ -1,0 +1,58 @@
+{
+  "devicesAndConfigurations": [
+    {
+      "device": {
+        "architecture": "arm64",
+        "deviceName": "My Mac",
+        "modelName": "Mac mini",
+        "osBuildNumber": "24G830",
+        "osVersion": "15.7.9",
+        "platform": "macOS"
+      },
+      "expectedFailures": 0,
+      "failedTests": 2,
+      "passedTests": 88,
+      "skippedTests": 0,
+      "testPlanConfiguration": {
+        "configurationId": "1",
+        "configurationName": "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription": "LightAudio Editor · Built with macOS 15.7.9",
+  "expectedFailures": 0,
+  "failedTests": 2,
+  "finishTime": 1792480922.641,
+  "passedTests": 88,
+  "result": "Failed",
+  "skippedTests": 0,
+  "startTime": 1792480882.656,
+  "statistics": [],
+  "testFailures": [
+    {
+      "failureText": "XCTUnwrap failed: expected non-nil value of type \"AVAudioFormat\"",
+      "targetName": "LightAudio EditorTests",
+      "testIdentifier": 8,
+      "testIdentifierString": "MediaPortabilityTests/testLosslessVideoNativePrecisionAndRetimingMatchPlaybackProxy()",
+      "testIdentifierURL": "test://com.apple.xcode/LightAudio%20Editor/LightAudio%20EditorTests/MediaPortabilityTests/testLosslessVideoNativePrecisionAndRetimingMatchPlaybackProxy",
+      "testName": "testLosslessVideoNativePrecisionAndRetimingMatchPlaybackProxy()"
+    },
+    {
+      "failureText": "XCTAssertTrue failed",
+      "targetName": "LightAudio EditorTests",
+      "testIdentifier": 79,
+      "testIdentifierString": "P2RegressionTests/testSourceModificationIsMarkedUnavailableBeforeRendering()",
+      "testIdentifierURL": "test://com.apple.xcode/LightAudio%20Editor/LightAudio%20EditorTests/P2RegressionTests/testSourceModificationIsMarkedUnavailableBeforeRendering",
+      "testName": "testSourceModificationIsMarkedUnavailableBeforeRendering()"
+    }
+  ],
+  "title": "Test - LightAudio Editor",
+  "topInsights": [
+    {
+      "category": "Longest Test Runs",
+      "impact": "12% of duration",
+      "text": "1 longest test run with outlier durations exceeding 1.88s (three standard deviations)"
+    }
+  ],
+  "totalTestCount": 90
+}

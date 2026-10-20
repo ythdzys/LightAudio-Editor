@@ -1,7 +1,7 @@
 import Foundation
 
 struct Project: Codable {
-    static let currentFormatVersion = 1
+    static let currentFormatVersion = 3
     static let minimumSupportedFormatVersion = 1
 
     var formatVersion: Int
@@ -80,6 +80,12 @@ struct Project: Codable {
 
     var missingAssets: [MediaAsset] {
         assets.filter { $0.isMissing }
+    }
+
+    /// Older readers must reject partial fades instead of silently changing their sound.
+    var requiredFormatVersion: Int {
+        if timeline.crossfades.contains(where: \.isPartial) { return 3 }
+        return timeline.tracks.flatMap(\.clips).contains { $0.fadeIn.isPartial || $0.fadeOut.isPartial } ? 2 : 1
     }
 
     var hasMissingAssets: Bool {
@@ -220,6 +226,10 @@ struct TimelineViewState: Codable {
     static func clampedHorizontalScroll(_ value: Double) -> Double {
         guard value.isFinite else { return 0 }
         return min(maximumHorizontalScroll, max(0, value))
+    }
+
+    static func isValidTimelineTime(_ value: TimeInterval) -> Bool {
+        value.isFinite && value >= 0 && value <= maximumTimelineTime
     }
 
     static func clampedTimelineTime(_ value: TimeInterval?) -> TimeInterval? {

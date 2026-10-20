@@ -121,12 +121,3 @@ final class PreferencesWindowController: NSWindowController {
         }
     }
 }
-
-enum EditorPreferences {
-    private static let automaticCrossfadesKey = "LightAudio.AutomaticCrossfades"
-
-    static var automaticallyCreateCrossfades: Bool {
-        get { UserDefaults.standard.bool(forKey: automaticCrossfadesKey) }
-        set { UserDefaults.standard.set(newValue, forKey: automaticCrossfadesKey) }
-    }
-}

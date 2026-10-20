@@ -7,6 +7,8 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
     private let completion: (ExportSettings) -> Void
     private let formatPopup = NSPopUpButton()
     private let rangePopup = NSPopUpButton()
+    private let rangeStart = NSTextField(string: "0")
+    private let rangeEnd = NSTextField(string: "0")
     private let sampleRatePopup = NSPopUpButton()
     private let channelsPopup = NSPopUpButton()
     private let bitratePopup = NSPopUpButton()
@@ -28,7 +30,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
     private init(project: Project, completion: @escaping (ExportSettings) -> Void) {
         self.project = project
         self.completion = completion
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 330), styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 420), styleMask: [.titled], backing: .buffered, defer: false)
         window.title = L10n.tr("Export Audio")
         super.init(window: window)
         setup()
@@ -48,10 +50,17 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
         content.addSubview(grid)
 
         ExportFormat.allCases.forEach { formatPopup.addItem(withTitle: $0.rawValue) }
-        rangePopup.addItems(withTitles: [L10n.tr("Entire Project"), L10n.tr("In/Out Range")])
+        rangePopup.addItems(withTitles: [L10n.tr("Entire Project"), L10n.tr("In/Out Range"), L10n.tr("Custom Range")])
         if project.viewState.validRange == nil {
             rangePopup.item(at: 1)?.isEnabled = false
         }
+        rangeStart.stringValue = String(project.viewState.validRange?.start ?? 0)
+        rangeEnd.stringValue = String(project.viewState.validRange?.end ?? project.duration)
+        rangeStart.delegate = self; rangeEnd.delegate = self
+        rangeStart.identifier = NSUserInterfaceItemIdentifier("export.start")
+        rangeEnd.identifier = NSUserInterfaceItemIdentifier("export.end")
+        rangePopup.target = self; rangePopup.action = #selector(rangeChanged)
+        rangeStart.isEnabled = false; rangeEnd.isEnabled = false
         sampleRatePopup.addItems(withTitles: [L10n.tr("Project default"), "44100", "48000", "96000"])
         channelsPopup.addItems(withTitles: [L10n.tr("Project default"), L10n.tr("Mono"), L10n.tr("Stereo")])
         bitratePopup.addItems(withTitles: ["128 kbps", "192 kbps", "256 kbps", "320 kbps"])
@@ -67,6 +76,8 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
 
         addRow(to: grid, label: "Format", view: formatPopup)
         addRow(to: grid, label: "Range", view: rangePopup)
+        addRow(to: grid, label: "Start (seconds)", view: rangeStart)
+        addRow(to: grid, label: "End (seconds)", view: rangeEnd)
         addRow(to: grid, label: "Sample rate", view: sampleRatePopup)
         addRow(to: grid, label: "Channels", view: channelsPopup)
         addRow(to: grid, label: "Bitrate", view: bitratePopup)
@@ -178,8 +189,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField, field === outputField else { return }
-        syncOutputURLFromField()
+        if let field = obj.object as? NSTextField, field === outputField { syncOutputURLFromField() }
         updateExportButton()
     }
 
@@ -205,6 +215,7 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
             return
         }
         exportButton.isEnabled = formatIsAvailable
+            && selectedRange() != nil
             && outputURL.isFileURL
             && !outputURL.lastPathComponent.isEmpty
             && !outputURL.hasDirectoryPath
@@ -259,13 +270,14 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
     }
 
     private func finishExport(to outputURL: URL, overwritingExisting: Bool) {
+        guard let range = selectedRange() else { return }
         let settings = ExportSettings(
             format: selectedFormat(),
             sampleRate: selectedSampleRate(),
             channelCount: selectedChannelCount(),
             bitrate: selectedBitrate(),
             outputURL: outputURL,
-            range: selectedRange(),
+            range: range,
             overwriteExisting: overwritingExisting
         )
         guard let window = window else { return }
@@ -299,11 +311,21 @@ final class ExportPanelController: NSWindowController, NSTextFieldDelegate {
         return [128, 192, 256, 320][max(0, bitratePopup.indexOfSelectedItem)]
     }
 
-    private func selectedRange() -> ExportRange {
-        guard rangePopup.indexOfSelectedItem == 1, let range = project.viewState.validRange else {
-            return .entireProject
+    @objc private func rangeChanged() {
+        rangeStart.isEnabled = rangePopup.indexOfSelectedItem == 2
+        rangeEnd.isEnabled = rangeStart.isEnabled
+        updateExportButton()
+    }
+
+    private func selectedRange() -> ExportRange? {
+        switch rangePopup.indexOfSelectedItem {
+        case 1:
+            guard let range = project.viewState.validRange else { return nil }
+            return .timeRange(start: range.start, end: range.end)
+        case 2:
+            return ExportRange.parsedTimeRange(start: rangeStart.stringValue, end: rangeEnd.stringValue, projectDuration: project.duration)
+        default: return .entireProject
         }
-        return .timeRange(start: range.start, end: range.end)
     }
 
     private func defaultOutputURL(for format: ExportFormat) -> URL {

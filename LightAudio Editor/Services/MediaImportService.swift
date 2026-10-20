@@ -20,7 +20,7 @@ final class MediaImportService {
                     metadata: metadata,
                     sourceModificationTimestamp: self.resolver.sourceModificationTimestamp(for: url),
                     waveformCacheKey: nil,
-                    proxyStatus: isVideo ? .generating : .none,
+                    proxyStatus: AudioFormatHelpers.requiresContainerAudioDecode(url.pathExtension) ? .generating : .none,
                     isMissing: false
                 )
                 DispatchQueue.main.async { completion(.success(asset)) }
@@ -31,39 +31,24 @@ final class MediaImportService {
     }
 
     func metadata(for url: URL) throws -> MediaFileMetadata {
-        let avAsset = AVURLAsset(url: url)
-        let containerDuration = CMTimeGetSeconds(avAsset.duration)
-        var sampleRate = 44100.0
-        var channelCount = 2
-        var duration = containerDuration
-
-        let isVideo = AudioFormatHelpers.isVideoExtension(url.pathExtension)
-        if let track = avAsset.tracks(withMediaType: .audio).first {
-            let trackDuration = CMTimeGetSeconds(track.timeRange.duration)
-            if trackDuration.isFinite, trackDuration > 0 {
-                // A video container can outlast its audio track; clips must use the audible duration.
-                duration = trackDuration
-            }
-            if let description = track.formatDescriptions.first,
-               let audioDescription = audioFormatDescription(from: description),
-               CMFormatDescriptionGetMediaType(audioDescription) == kCMMediaType_Audio,
-               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(audioDescription) {
-                sampleRate = asbd.pointee.mSampleRate
-                channelCount = Int(asbd.pointee.mChannelsPerFrame)
-            }
+        let sampleRate: Double
+        let channelCount: Int
+        let duration: Double
+        if AudioFormatHelpers.requiresContainerAudioDecode(url.pathExtension) {
+            let plan = try VideoAudioPlan(asset: AVURLAsset(url: url),
+                                          preserveLeadingSilence: !AudioFormatHelpers.isVideoExtension(url.pathExtension))
+            duration = plan.duration; sampleRate = plan.sampleRate; channelCount = plan.channelCount
         } else {
-            if isVideo {
-                throw NSError(domain: "LightAudio", code: 2, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This video does not contain an audio track.")])
-            }
+            // Match the decoder used by waveform analysis, normalization and rendering.
+            // AVAsset track durations can estimate untagged VBR MP3 incorrectly or exclude
+            // AAC priming without moving the raw decoder's origin, cutting audible tails.
             let file = try AVAudioFile(forReading: url)
-            sampleRate = file.fileFormat.sampleRate
-            channelCount = Int(file.fileFormat.channelCount)
-            if sampleRate > 0 {
-                duration = Double(file.length) / sampleRate
-            }
+            sampleRate = file.processingFormat.sampleRate
+            channelCount = Int(file.processingFormat.channelCount)
+            duration = sampleRate > 0 ? Double(file.length) / sampleRate : 0
         }
 
-        guard duration.isFinite, duration > 0, sampleRate > 0, channelCount > 0 else {
+        guard TimelineViewState.isValidTimelineTime(duration), duration > 0, sampleRate.isFinite, sampleRate > 0, sampleRate <= 384_000, channelCount > 0 else {
             throw NSError(domain: "LightAudio", code: 3, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This media does not contain readable audio.")])
         }
 
@@ -74,13 +59,42 @@ final class MediaImportService {
             duration: duration,
             sampleRate: sampleRate,
             channelCount: channelCount,
-            checksum: FileMetadataHasher.sha256Prefix(for: url)
+            checksum: try FileMetadataHasher.fullChecksum(for: url)
         )
     }
+}
 
-    private func audioFormatDescription(from value: Any) -> CMAudioFormatDescription? {
-        let reference = value as CFTypeRef
-        guard CFGetTypeID(reference) == CMFormatDescriptionGetTypeID() else { return nil }
-        return unsafeBitCast(reference, to: CMAudioFormatDescription.self)
+/// Metadata and PCM extraction use the same set of audio tracks and the same time interval.
+struct VideoAudioPlan {
+    let asset: AVAsset
+    let tracks: [AVAssetTrack]
+    let start: Double
+    let duration: Double
+    let sampleRate: Double
+    let channelCount: Int
+    init(asset: AVAsset, preserveLeadingSilence: Bool = false) throws {
+        self.asset = asset
+        tracks = asset.tracks(withMediaType: .audio)
+        guard !tracks.isEmpty else { throw NSError(domain: "LightAudio", code: 2, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This video does not contain an audio track.")]) }
+        var rates: [Double] = [], channels: [Int] = [], starts: [Double] = [], ends: [Double] = []
+        for track in tracks {
+            guard let description = track.formatDescriptions.first,
+                  let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description as! CMAudioFormatDescription) else {
+                throw NSError(domain: "LightAudio", code: 3, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This media does not contain readable audio.")])
+            }
+            rates.append(asbd.pointee.mSampleRate); channels.append(Int(asbd.pointee.mChannelsPerFrame))
+            // MOV tracks can begin with an empty edit, while timeRange still starts at zero.
+            // Use actual media segments for the outer interval, retaining internal gaps.
+            let segments = track.segments
+            let ranges = segments.isEmpty ? [track.timeRange] : segments.filter { !$0.isEmpty }.map { $0.timeMapping.target }
+            for range in ranges { starts.append(range.start.seconds); ends.append(range.end.seconds) }
+        }
+        start = preserveLeadingSilence ? 0 : (starts.min() ?? 0)
+        sampleRate = rates.max() ?? 44100
+        channelCount = tracks.count == 1 ? channels[0] : 2
+        duration = AudioFrameMath.ceiling(((ends.max() ?? 0) - start) * sampleRate) / sampleRate
+        guard start.isFinite, TimelineViewState.isValidTimelineTime(duration), duration > 0, sampleRate.isFinite, sampleRate > 0, sampleRate <= 384000, channelCount > 0 else {
+            throw NSError(domain: "LightAudio", code: 3, userInfo: [NSLocalizedDescriptionKey: L10n.tr("This media does not contain readable audio.")])
+        }
     }
 }

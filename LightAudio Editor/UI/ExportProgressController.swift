@@ -17,6 +17,13 @@ final class ExportProgressController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func showActivity(_ text: String) {
+        window?.title = text
+        label.stringValue = text
+        progress.isIndeterminate = true
+        progress.startAnimation(nil)
+    }
+
     func update(progress value: Double) {
         progress.doubleValue = min(1, max(0, value)) * 100
         label.stringValue = L10n.format("Exporting %d%%", Int(progress.doubleValue))

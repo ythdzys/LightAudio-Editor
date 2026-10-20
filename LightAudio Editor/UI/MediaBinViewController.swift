@@ -277,7 +277,7 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
             menu.addItem(targetedItem(title: "Show Waveform Error", action: #selector(showWaveformErrorSelected)))
         }
 
-        if asset.kind == .videoAudio {
+        if asset.requiresAudioPreparation {
             let proxy = targetedItem(title: "Regenerate Audio Proxy", action: #selector(regenerateProxySelected))
             proxy.isEnabled = !asset.isMissing
             menu.addItem(proxy)
@@ -363,6 +363,7 @@ final class MediaBinViewController: NSViewController, NSTableViewDataSource, NST
     }
 
     private func statusText(for asset: MediaAsset) -> String {
+        if asset.isVerifyingSource { return L10n.tr("Verifying source...") }
         if asset.isMissing || asset.proxyStatus == .missing {
             return L10n.tr("Missing")
         }
