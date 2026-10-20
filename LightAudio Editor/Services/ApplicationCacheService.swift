@@ -14,12 +14,58 @@ struct ApplicationCacheClearResult {
     }
 }
 
+struct ApplicationCacheUsage {
+    let waveformBytes: Int64
+    let proxyBytes: Int64
+    let recoveryBytes: Int64
+    var totalBytes: Int64 { waveformBytes + proxyBytes + recoveryBytes }
+}
+
 final class ApplicationCacheService {
     private let fileManager = FileManager.default
 
-    private var applicationSupportDirectory: URL {
-        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return base.appendingPathComponent("LightAudio Editor", isDirectory: true)
+    private let applicationSupportDirectory: URL
+
+    init(applicationSupportDirectory: URL? = nil) {
+        self.applicationSupportDirectory = applicationSupportDirectory ?? FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("LightAudio Editor", isDirectory: true)
+    }
+
+    func measureApplicationCaches(completion: @escaping (Result<ApplicationCacheUsage, Error>) -> Void) {
+        DispatchQueue.global(qos: .utility).async { [applicationSupportDirectory] in
+            let result = Result {
+                try ApplicationCacheUsage(
+                    waveformBytes: Self.byteCount(in: applicationSupportDirectory.appendingPathComponent("Waveforms")),
+                    proxyBytes: Self.byteCount(in: applicationSupportDirectory.appendingPathComponent("Media Proxies")),
+                    recoveryBytes: Self.byteCount(in: applicationSupportDirectory.appendingPathComponent("Recovery")))
+            }
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+
+    private static func byteCount(in directory: URL) throws -> Int64 {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: directory.path) else { return 0 }
+        guard try directory.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { return 0 }
+        var traversalError: Error?
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+        let entries = manager.enumerator(at: directory, includingPropertiesForKeys: Array(keys), errorHandler: { _, error in
+            traversalError = error; return false
+        })
+        var bytes: Int64 = 0
+        while let url = entries?.nextObject() as? URL {
+            do {
+                let values = try url.resourceValues(forKeys: keys)
+                if values.isSymbolicLink == true { continue }
+                if values.isRegularFile == true { bytes += Int64(values.fileSize ?? 0) }
+            } catch {
+                // Background cache jobs may replace/remove a file during measurement.
+                if manager.fileExists(atPath: url.path) { throw error }
+            }
+        }
+        if let error = traversalError { throw error }
+        return bytes
     }
 
     func clearApplicationCaches(completion: @escaping (Result<ApplicationCacheClearResult, Error>) -> Void) {

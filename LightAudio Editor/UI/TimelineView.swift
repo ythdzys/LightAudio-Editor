@@ -120,6 +120,7 @@ final class TimelineView: NSView {
     var onSetTrackVolume: ((UUID, Double) -> Void)?
     var onSetTrackPan: ((UUID, Double) -> Void)?
     var onTrackVolumeAutomation: ((UUID) -> Void)?
+    var onClipVolumeAutomation: ((UUID) -> Void)?
     var onClipPanAutomation: ((UUID) -> Void)?
     var onRenameTrack: ((UUID) -> Void)?
     var onAddTrack: (() -> Void)?
@@ -1818,7 +1819,7 @@ final class TimelineView: NSView {
 
     private func dropTrackIndex(forY y: CGFloat) -> Int {
         let existingCount = max(project.timeline.tracks.count, 1)
-        let maximumIndex = min(63, existingCount + maxAutoCreatedTracksPerDrop - 1)
+        let maximumIndex = existingCount + maxAutoCreatedTracksPerDrop - 1
         return min(rawDropTrackIndex(forY: y), maximumIndex)
     }
 
@@ -1997,6 +1998,7 @@ final class TimelineView: NSView {
             let menu = NSMenu()
             menu.addItem(withTitle: L10n.format("Source: %@", project.asset(id: hit.clip.sourceAssetID)?.displayName ?? L10n.tr("Missing")), action: nil, keyEquivalent: "")
             menu.addItem(.separator())
+            menu.addItem(withTitle: L10n.tr("Edit Clip Volume Automation..."), action: #selector(clipVolumeAutomationMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             menu.addItem(withTitle: L10n.tr("Clip Pan Automation..."), action: #selector(clipPanAutomationMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             menu.addItem(withTitle: L10n.tr("Rename Clip"), action: #selector(renameClipMenu(_:)), keyEquivalent: "").representedObject = hit.clip.id
             let colorMenu = NSMenu(title: L10n.tr("Clip Color"))
@@ -2024,7 +2026,7 @@ final class TimelineView: NSView {
             menu.addItem(crossfadeCurveMenu(clipID: hit.clip.id))
             let removeCrossfades = NSMenuItem(title: L10n.tr("Remove Crossfades"), action: #selector(removeCrossfadesMenu(_:)), keyEquivalent: "")
             removeCrossfades.representedObject = hit.clip.id
-            removeCrossfades.isEnabled = project.timeline.crossfades.contains { $0.leadingClipID == hit.clip.id || $0.trailingClipID == hit.clip.id }
+            removeCrossfades.isEnabled = !project.timeline.tracks[hit.trackIndex].isLocked && project.timeline.crossfades.contains { $0.leadingClipID == hit.clip.id || $0.trailingClipID == hit.clip.id }
             menu.addItem(removeCrossfades)
             menu.addItem(.separator())
             menu.addItem(withTitle: L10n.tr("Copy"), action: #selector(copyMenu(_:)), keyEquivalent: "")
@@ -2067,12 +2069,12 @@ final class TimelineView: NSView {
             item.target = self
             item.representedObject = CrossfadeCurveMenuPayload(clipID: clipID, curve: curve)
             item.state = selectedCurve == curve ? .on : .off
-            item.isEnabled = hasCrossfade
+            item.isEnabled = hasCrossfade && project.timeline.tracks.first(where: { $0.clips.contains(where: { $0.id == clipID }) })?.isLocked == false
             submenu.addItem(item)
         }
         let item = NSMenuItem(title: L10n.tr("Crossfade Curve"), action: nil, keyEquivalent: "")
         item.submenu = submenu
-        item.isEnabled = hasCrossfade
+        item.isEnabled = hasCrossfade && project.timeline.tracks.first(where: { $0.clips.contains(where: { $0.id == clipID }) })?.isLocked == false
         return item
     }
 
@@ -2088,6 +2090,9 @@ final class TimelineView: NSView {
     }
     @objc private func trackAutomationMenu(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? UUID { onTrackVolumeAutomation?(id) }
+    }
+    @objc private func clipVolumeAutomationMenu(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? UUID { onClipVolumeAutomation?(id) }
     }
     @objc private func clipPanAutomationMenu(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? UUID { onClipPanAutomation?(id) }

@@ -1,6 +1,29 @@
 import AppKit
 
+enum EditorAppearance: String, CaseIterable {
+    case system, light, dark
+
+    static var preferred: Self {
+        get { Self(rawValue: UserDefaults.standard.string(forKey: "EditorAppearance") ?? "") ?? .system }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "EditorAppearance") }
+    }
+
+    static func apply() {
+        switch preferred {
+        case .system: NSApp.appearance = nil
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
 final class PreferencesWindowController: NSWindowController {
+    var onAutosavePreferenceChanged: (() -> Void)?
+    private let cacheService: ApplicationCacheService
+    private let appearancePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let autosaveCheckbox = NSButton(checkboxWithTitle: L10n.tr("Automatically save changes to saved projects"), target: nil, action: nil)
+    private let cacheUsageLabel = NSTextField(wrappingLabelWithString: "")
+    private let refreshCacheButton = NSButton(title: L10n.tr("Refresh Cache Usage"), target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: "")
     private let languageLabel = NSTextField(labelWithString: L10n.tr("Language:"))
     private let languagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -10,9 +33,11 @@ final class PreferencesWindowController: NSWindowController {
     private let clearCacheButton = NSButton(title: L10n.tr("Clear App Cache"), target: nil, action: nil)
     private let onClearApplicationCaches: (@escaping (Result<ApplicationCacheClearResult, Error>) -> Void) -> Void
 
-    init(onClearApplicationCaches: @escaping (@escaping (Result<ApplicationCacheClearResult, Error>) -> Void) -> Void) {
+    init(cacheService: ApplicationCacheService = ApplicationCacheService(), onClearApplicationCaches: @escaping (@escaping (Result<ApplicationCacheClearResult, Error>) -> Void) -> Void) {
+        self.cacheService = cacheService
         self.onClearApplicationCaches = onClearApplicationCaches
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 280), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 460), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
         window.title = L10n.tr("Preferences")
         super.init(window: window)
         setup()
@@ -41,33 +66,72 @@ final class PreferencesWindowController: NSWindowController {
         clearCacheButton.action = #selector(clearApplicationCache)
         cacheStatusLabel.textColor = .secondaryLabelColor
 
-        [languageLabel, languagePopup, languageHintLabel, autoCrossfadeCheckbox, statusLabel, clearCacheButton, cacheStatusLabel].forEach {
-            $0.translatesAutoresizingMaskIntoConstraints = false
-            content.addSubview($0)
-        }
+        appearancePopup.addItems(withTitles: [L10n.tr("System Default"), L10n.tr("Light"), L10n.tr("Dark")])
+        appearancePopup.selectItem(at: EditorAppearance.allCases.firstIndex(of: .preferred) ?? 0)
+        appearancePopup.target = self
+        appearancePopup.action = #selector(appearanceChanged)
+        autosaveCheckbox.state = EditorPreferences.automaticallySaveChanges ? .on : .off
+        autosaveCheckbox.target = self
+        autosaveCheckbox.action = #selector(autosaveChanged)
+        refreshCacheButton.target = self
+        refreshCacheButton.action = #selector(refreshCacheUsage)
+        cacheUsageLabel.textColor = .secondaryLabelColor
 
+        let languageRow = NSStackView(views: [languageLabel, languagePopup])
+        let appearanceRow = NSStackView(views: [NSTextField(labelWithString: L10n.tr("Appearance:")), appearancePopup])
+        let cacheRow = NSStackView(views: [clearCacheButton, refreshCacheButton])
+        let stack = NSStackView(views: [languageRow, languageHintLabel, appearanceRow,
+            autoCrossfadeCheckbox, autosaveCheckbox, statusLabel, cacheUsageLabel, cacheRow, cacheStatusLabel])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(stack)
         NSLayoutConstraint.activate([
-            languageLabel.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
-            languageLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            languageLabel.centerYAnchor.constraint(equalTo: languagePopup.centerYAnchor),
-            languagePopup.topAnchor.constraint(equalTo: content.topAnchor, constant: 22),
-            languagePopup.leadingAnchor.constraint(equalTo: languageLabel.trailingAnchor, constant: 12),
-            languagePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 180),
-            languageHintLabel.topAnchor.constraint(equalTo: languagePopup.bottomAnchor, constant: 4),
-            languageHintLabel.leadingAnchor.constraint(equalTo: languagePopup.leadingAnchor),
-            languageHintLabel.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -24),
-            autoCrossfadeCheckbox.topAnchor.constraint(equalTo: languageHintLabel.bottomAnchor, constant: 24),
-            autoCrossfadeCheckbox.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            autoCrossfadeCheckbox.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -24),
-            statusLabel.topAnchor.constraint(equalTo: autoCrossfadeCheckbox.bottomAnchor, constant: 12),
-            statusLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            statusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            clearCacheButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 30),
-            clearCacheButton.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            cacheStatusLabel.centerYAnchor.constraint(equalTo: clearCacheButton.centerYAnchor),
-            cacheStatusLabel.leadingAnchor.constraint(equalTo: clearCacheButton.trailingAnchor, constant: 12),
-            cacheStatusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24)
+            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -24),
+            cacheUsageLabel.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
+        refreshCacheUsage()
+    }
+
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        refreshCacheUsage()
+    }
+
+    @objc private func appearanceChanged() {
+        let index = appearancePopup.indexOfSelectedItem
+        guard EditorAppearance.allCases.indices.contains(index) else { return }
+        EditorAppearance.preferred = EditorAppearance.allCases[index]
+        EditorAppearance.apply()
+    }
+
+    @objc private func autosaveChanged() {
+        EditorPreferences.automaticallySaveChanges = autosaveCheckbox.state == .on
+        onAutosavePreferenceChanged?()
+    }
+
+    @objc private func refreshCacheUsage() {
+        refreshCacheButton.isEnabled = false
+        cacheService.measureApplicationCaches { [weak self] result in
+            guard let self else { return }
+            self.refreshCacheButton.isEnabled = true
+            switch result {
+            case .success(let usage):
+                let size: (Int64) -> String = { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
+                self.cacheUsageLabel.stringValue = [
+                    L10n.format("Waveforms: %@", size(usage.waveformBytes)),
+                    L10n.format("Video audio proxies: %@", size(usage.proxyBytes)),
+                    L10n.format("Recovery snapshots: %@", size(usage.recoveryBytes)),
+                    L10n.format("Total cache: %@", size(usage.totalBytes))
+                ].joined(separator: "\n")
+            case .failure(let error):
+                self.cacheUsageLabel.stringValue = error.localizedDescription
+            }
+        }
     }
 
     @objc private func languageChanged() {
@@ -112,6 +176,7 @@ final class PreferencesWindowController: NSWindowController {
                 switch result {
                 case .success(let cleared):
                     self.cacheStatusLabel.stringValue = cleared.summary
+                    self.refreshCacheUsage()
                     self.cacheStatusLabel.textColor = .secondaryLabelColor
                 case .failure(let error):
                     self.cacheStatusLabel.stringValue = error.localizedDescription

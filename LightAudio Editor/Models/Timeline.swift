@@ -581,6 +581,10 @@ enum FadeMath {
 enum TimelineTrimEdge { case left, right }
 
 enum EditorPreferences {
+    static var automaticallySaveChanges: Bool {
+        get { UserDefaults.standard.object(forKey: "AutomaticallySaveChanges") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "AutomaticallySaveChanges") }
+    }
     private static let automaticCrossfadesKey = "LightAudio.AutomaticCrossfades"
 
     static var automaticallyCreateCrossfades: Bool {

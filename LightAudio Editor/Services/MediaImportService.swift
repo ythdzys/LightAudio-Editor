@@ -3,15 +3,17 @@ import AVFoundation
 
 final class MediaImportService {
     private let resolver = FileReferenceResolver()
+    private let importQueue = DispatchQueue(label: "com.lightaudio.media-import", qos: .userInitiated)
 
-    func importMedia(at url: URL, projectURL: URL?, completion: @escaping (Result<MediaAsset, Error>) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
+    func importMedia(at url: URL, projectURL: URL?, cancellation: ExportCancellationToken = ExportCancellationToken(), completion: @escaping (Result<MediaAsset, Error>) -> Void) {
+        importQueue.async {
             do {
+                if cancellation.isCancelled { throw CancellationError() }
                 guard AudioFormatHelpers.supportedImportExtension(url.pathExtension) else {
                     throw NSError(domain: "LightAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Unsupported media type.")])
                 }
                 let isVideo = AudioFormatHelpers.isVideoExtension(url.pathExtension)
-                let metadata = try self.metadata(for: url)
+                let metadata = try self.metadata(for: url, cancellation: cancellation)
                 let asset = MediaAsset(
                     displayName: url.deletingPathExtension().lastPathComponent,
                     originalPath: url.path,
@@ -30,7 +32,8 @@ final class MediaImportService {
         }
     }
 
-    func metadata(for url: URL) throws -> MediaFileMetadata {
+    func metadata(for url: URL, cancellation: ExportCancellationToken? = nil) throws -> MediaFileMetadata {
+        if cancellation?.isCancelled == true { throw CancellationError() }
         let sampleRate: Double
         let channelCount: Int
         let duration: Double
@@ -59,7 +62,7 @@ final class MediaImportService {
             duration: duration,
             sampleRate: sampleRate,
             channelCount: channelCount,
-            checksum: try FileMetadataHasher.fullChecksum(for: url)
+            checksum: try FileMetadataHasher.fullChecksum(for: url, cancellation: cancellation)
         )
     }
 }

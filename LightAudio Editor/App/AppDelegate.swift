@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recoveryCheckInProgress = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        EditorAppearance.apply()
         buildMenu()
         NSApp.setActivationPolicy(.regular)
         hasFinishedLaunching = true
@@ -171,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let projectItem = NSMenuItem()
         mainMenu.addItem(projectItem)
         let projectMenu = NSMenu(title: L10n.tr("Project"))
+        addMenuItem(to: projectMenu, title: L10n.tr("Rename Project..."), action: #selector(renameProject(_:)), keyEquivalent: "")
         addMenuItem(to: projectMenu, title: L10n.tr("Relink Missing Media..."), action: #selector(relinkMissingMedia(_:)), keyEquivalent: "")
         addMenuItem(to: projectMenu, title: L10n.tr("Locate Folder for Missing Media..."), action: #selector(locateMissingMediaFolder(_:)), keyEquivalent: "")
         addMenuItem(to: projectMenu, title: L10n.tr("Recover Interrupted Project..."), action: #selector(recoverInterruptedProject(_:)), keyEquivalent: "")
@@ -258,6 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func newProject(_ sender: Any?) { mainWindowController?.newProject(sender) }
     @objc private func openProject(_ sender: Any?) { mainWindowController?.openProject(sender) }
+    @objc private func renameProject(_ sender: Any?) { mainWindowController?.renameProject(sender) }
     @objc private func saveProject(_ sender: Any?) { mainWindowController?.saveProject(sender) }
     @objc private func saveProjectAs(_ sender: Any?) { mainWindowController?.saveProjectAs(sender) }
     @objc private func importMedia(_ sender: Any?) { mainWindowController?.importMedia(sender) }
@@ -327,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             windowController.clearApplicationCaches(completion: completion)
         }
+        controller.onAutosavePreferenceChanged = { [weak self] in self?.mainWindowController?.scheduleAutosave() }
         preferencesWindowController = controller
         controller.showWindow(sender)
         controller.window?.center()

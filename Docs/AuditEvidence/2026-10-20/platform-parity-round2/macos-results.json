@@ -1,0 +1,40 @@
+{
+  "exportDecoderLifetime" : {
+    "baselineDescriptors" : 5,
+    "clips" : 160,
+    "error" : "none",
+    "growth" : 160,
+    "peakDescriptors" : 165
+  },
+  "inspectorFadeInputs" : {
+    "0,5" : 0,
+    "0.5" : 0.5,
+    "invalid" : 0
+  },
+  "lockedCrossfadeRemoval" : {
+    "after" : 0,
+    "before" : 1,
+    "locked" : true
+  },
+  "nonfinitePlayheadAccepted" : true,
+  "overflowOutputSample" : 1,
+  "pendingImportSharedController" : {
+    "existingSourceMissingAfterVerification" : false,
+    "outcome" : "Missing media must be relinked before importing new media.",
+    "pending" : true
+  },
+  "relinkPendingState" : {
+    "accepted" : true,
+    "isVerifyingSource" : true
+  },
+  "timelineBounds" : {
+    "canSaveAfterPlacement" : false,
+    "duration" : 8000000.0499999998,
+    "placementAccepted" : true
+  },
+  "track65Placement" : {
+    "clamped" : true,
+    "target" : "A64",
+    "trackCount" : 64
+  }
+}

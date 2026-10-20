@@ -1,6 +1,9 @@
 import AppKit
 
 final class MainWindowController: NSWindowController, ProjectControllerDelegate, NSWindowDelegate {
+    private var autosaveWork: DispatchWorkItem?
+    private var autosaveSuspended = false
+    private var activeImport: ExportCancellationToken?
     private var automationEditor: AutomationEditorController?
     private let projectController: ProjectController
     private let playbackEngine = AudioPlaybackEngine()
@@ -228,7 +231,12 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         timelineView.onDeleteMarker = { [weak self] id in self?.projectController.deleteMarker(id) }
         timelineView.onRenameMarker = { [weak self] id in self?.renameMarker(markerID: id) }
         timelineView.onTrackVolumeAutomation = { [weak self] id in self?.showAutomation(.trackVolume(id)) }
+        timelineView.onClipVolumeAutomation = { [weak self] id in self?.showAutomation(.clipVolume(id)) }
         timelineView.onClipPanAutomation = { [weak self] id in self?.showAutomation(.clipPan(id)) }
+        inspector.onVolumeAutomation = { [weak self] in
+            guard let self, let id = self.projectController.selectedClipID else { return }
+            self.showAutomation(.clipVolume(id))
+        }
         inspector.onPanAutomation = { [weak self] in
             guard let self, let id = self.projectController.selectedClipID else { return }
             self.showAutomation(.clipPan(id))
@@ -410,6 +418,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     func projectDidChange(_ project: Project) {
+        scheduleAutosave()
         let revision = projectController.audioRenderRevision
         if revision != observedAudioRenderRevision {
             observedAudioRenderRevision = revision
@@ -483,6 +492,8 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     func projectController(_ controller: ProjectController, didFindMissingAssets assets: [MediaAsset]) {
+        // The batch reports its failures after closing the progress sheet.
+        guard activeImport == nil else { return }
         MissingMediaDialogController.show(missing: assets, window: window) { [weak self] action in
             switch action {
             case .relinkFirst(let id):
@@ -496,6 +507,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     func projectController(_ controller: ProjectController, didFailWith error: Error) {
+        guard activeImport == nil else { showStatus(error.localizedDescription); return }
         showError(error.localizedDescription)
     }
 
@@ -541,11 +553,16 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
             panel.nameFieldStringValue = "\(projectController.project.name).liau"
             panel.beginSheetModal(for: window!) { [weak self] response in
                 guard response == .OK, let url = panel.url else { return }
-                if self?.projectController.save(to: url) == true { self?.showStatus(L10n.tr("Project saved")) }
+                self?.projectController.saveAsynchronously(to: url) { saved in
+                    if saved { self?.showStatus(L10n.tr("Project saved")) }
+                }
             }
             return
         }
-        if projectController.save() { showStatus(L10n.tr("Project saved")) }
+        autosaveWork?.cancel()
+        projectController.saveAsynchronously { [weak self] saved in
+            if saved { self?.showStatus(L10n.tr("Project saved")) }
+        }
     }
 
     @objc func saveProjectAs(_ sender: Any?) {
@@ -619,75 +636,45 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     }
 
     private func importDroppedMedia(_ urls: [URL]) {
-        guard !urls.isEmpty else { return }
-        showStatus(L10n.tr("Scanning media files..."))
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Self.supportedMediaFiles(from: urls)
-            DispatchQueue.main.async {
-                self?.importMediaFilesToLibrary(result.supported, skippedCount: result.skipped)
-            }
-        }
+        importMediaFilesToLibrary(urls, skippedCount: 0)
     }
 
     private func importMediaFilesToLibrary(_ urls: [URL], skippedCount: Int) {
-        let uniqueURLs = Array(Set(urls.map { $0.standardizedFileURL })).sorted { $0.path < $1.path }
-        guard !uniqueURLs.isEmpty else {
-            if skippedCount > 0 {
-                showStatus(L10n.format(skippedCount == 1 ? "Skipped %d unsupported file" : "Skipped %d unsupported files", skippedCount))
-            } else {
-                showStatus(L10n.tr("No supported media files found"))
-            }
-            return
-        }
-
-        var completed = 0
-        var imported = 0
-        var duplicates = 0
-        var failed = 0
-        showStatus(L10n.format(uniqueURLs.count == 1 ? "Importing %d file" : "Importing %d files", uniqueURLs.count))
-        uniqueURLs.forEach { url in
-            projectController.importMediaToLibrary(url: url) { [weak self] outcome in
-                guard let self = self else { return }
-                completed += 1
-                switch outcome {
-                case .imported(let asset):
-                    imported += 1
-                    self.showStatus(L10n.tr(asset.kind == .videoAudio ? "Generating audio proxy..." : "Generating waveform..."))
-                case .duplicate(let asset):
-                    duplicates += 1
-                    self.mediaBin.selectAsset(id: asset.id)
-                case .alreadyImporting:
-                    duplicates += 1
-                case .failed:
-                    failed += 1
+        guard !urls.isEmpty, activeImport == nil, let window else { return }
+        let token = ExportCancellationToken(), progress = ExportProgressController()
+        activeImport = token
+        progress.showActivity(L10n.tr("Scanning media files..."))
+        progress.onCancel = { token.cancel() }
+        window.beginSheet(progress.window!)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let scanned = Self.supportedMediaFiles(from: urls, cancellation: token)
+            DispatchQueue.main.async {
+                self.projectController.importMediaBatch(scanned.supported, cancellation: token, progress: { done, total in
+                    progress.showActivity(L10n.format("Importing media %d of %d", done + 1, total))
+                }) { result in
+                    window.endSheet(progress.window!)
+                    self.activeImport = nil
+                    let skipped = scanned.skipped + skippedCount
+                    if result.cancelled {
+                        self.showStatus(L10n.tr("Import cancelled. Already imported media was kept."))
+                    } else {
+                        self.showStatus(L10n.format("Imported %d; duplicates %d; skipped %d; failed %d", result.imported, result.duplicates, skipped, result.errors.count))
+                        if !result.errors.isEmpty { self.showError(result.errors.joined(separator: "\n")) }
+                    }
+                    self.scheduleAutosave()
                 }
-                guard completed == uniqueURLs.count else { return }
-
-                var parts: [String] = []
-                if imported > 0 {
-                    parts.append(L10n.format(imported == 1 ? "Imported %d file" : "Imported %d files", imported))
-                }
-                if duplicates > 0 {
-                    parts.append(L10n.format("%d already imported", duplicates))
-                }
-                if skippedCount > 0 {
-                    parts.append(L10n.format("skipped %d unsupported", skippedCount))
-                }
-                if failed > 0 {
-                    parts.append(L10n.format("%d failed", failed))
-                }
-                self.showStatus(parts.isEmpty ? L10n.tr("No media imported") : parts.joined(separator: L10n.tr(", ")))
             }
         }
     }
 
-    private static func supportedMediaFiles(from urls: [URL]) -> (supported: [URL], skipped: Int) {
+    private static func supportedMediaFiles(from urls: [URL], cancellation: ExportCancellationToken? = nil) -> (supported: [URL], skipped: Int) {
         var supported: [URL] = []
         var skipped = 0
         for url in urls {
+            if cancellation?.isCancelled == true { break }
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
-                let folderResult = supportedMediaFiles(in: url)
+                let folderResult = supportedMediaFiles(in: url, cancellation: cancellation)
                 supported.append(contentsOf: folderResult.supported)
                 skipped += folderResult.skipped
             } else if AudioFormatHelpers.supportedImportExtension(url.pathExtension) {
@@ -699,13 +686,14 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         return (supported, skipped)
     }
 
-    private static func supportedMediaFiles(in folder: URL) -> (supported: [URL], skipped: Int) {
+    private static func supportedMediaFiles(in folder: URL, cancellation: ExportCancellationToken? = nil) -> (supported: [URL], skipped: Int) {
         guard let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
             return ([], 1)
         }
         var supported: [URL] = []
         var skipped = 0
         for case let url as URL in enumerator {
+            if cancellation?.isCancelled == true { break }
             if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
                 continue
             }
@@ -1692,11 +1680,41 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         }
     }
 
+    func scheduleAutosave() {
+        autosaveWork?.cancel()
+        guard EditorPreferences.automaticallySaveChanges, !autosaveSuspended, !terminationWasApproved,
+              projectController.projectURL != nil, projectController.isDirty, !projectController.isSaving else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, EditorPreferences.automaticallySaveChanges, !self.autosaveSuspended,
+                  !self.terminationWasApproved, self.projectController.isDirty else { return }
+            guard !self.projectController.isEditingContinuously, self.activeImport == nil,
+                  self.window?.attachedSheet == nil else { self.scheduleAutosave(); return }
+            self.projectController.saveAsynchronously { _ in }
+        }
+        autosaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+    }
+
+    @objc func renameProject(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = L10n.tr("Rename Project")
+        let field = NSTextField(string: projectController.project.name)
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        field.setAccessibilityLabel(L10n.tr("Project name"))
+        alert.accessoryView = field
+        alert.addButton(withTitle: L10n.tr("Rename")); alert.addButton(withTitle: L10n.tr("Cancel"))
+        alert.beginSheetModal(for: window!) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.projectController.renameProject(field.stringValue)
+        }
+    }
+
     func prepareForProjectReplacement(_ proceed: @escaping () -> Void) {
         confirmDiscardChanges(proceed)
     }
 
     private func confirmDiscardChanges(_ proceed: @escaping () -> Void) {
+        autosaveWork?.cancel()
         guard projectController.isDirty else {
             proceed()
             return
@@ -1707,7 +1725,9 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         alert.addButton(withTitle: L10n.tr("Save"))
         alert.addButton(withTitle: L10n.tr("Don't Save"))
         alert.addButton(withTitle: L10n.tr("Cancel"))
+        autosaveSuspended = true
         alert.beginSheetModal(for: window!) { [weak self] response in
+            defer { self?.autosaveSuspended = false; self?.scheduleAutosave() }
             switch response {
             case .alertFirstButtonReturn:
                 if self?.saveProjectSynchronously() == true { proceed() }
@@ -1739,7 +1759,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         alert.addButton(withTitle: L10n.tr("Cancel"))
 
         let durationField = NSTextField(string: "1.00")
-        durationField.formatter = DecimalNumberFormatter()
+        durationField.formatter = nil
         let curvePopup = NSPopUpButton()
         FadeCurve.allCases.forEach { curvePopup.addItem(withTitle: L10n.tr($0.displayName)) }
         curvePopup.selectItem(at: FadeCurve.allCases.firstIndex(of: .linear) ?? 0)
@@ -1759,13 +1779,16 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
         alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else { return }
-            let duration = max(0, durationField.doubleValue)
+            guard let duration = NumericInput.number(durationField.stringValue), duration >= 0 else { NSSound.beep(); return }
             let curveIndex = max(0, min(FadeCurve.allCases.count - 1, curvePopup.indexOfSelectedItem))
             completion(duration, FadeCurve.allCases[curveIndex])
         }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        autosaveWork?.cancel()
+        autosaveSuspended = true
+        defer { if !terminationWasApproved { autosaveSuspended = false; scheduleAutosave() } }
         if terminationWasApproved {
             return true
         }
@@ -1798,6 +1821,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
     /// App termination does not reliably pass through a window-close request, so it needs its
     /// own asynchronous prompt before AppKit receives a termination reply.
     func confirmTermination(_ completion: @escaping (Bool) -> Void) {
+        autosaveWork?.cancel()
         // Closing the last window can immediately trigger application termination. Reuse the
         // accepted close decision even when Don't Save deliberately leaves the project dirty.
         guard !terminationWasApproved, projectController.isDirty else {
@@ -1816,6 +1840,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
         alert.addButton(withTitle: L10n.tr("Save"))
         alert.addButton(withTitle: L10n.tr("Don't Save"))
         alert.addButton(withTitle: L10n.tr("Cancel"))
+        autosaveSuspended = true
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else {
                 completion(false)
@@ -1831,6 +1856,7 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
                 shouldTerminate = false
             }
             self.terminationWasApproved = shouldTerminate
+            if !shouldTerminate { self.autosaveSuspended = false; self.scheduleAutosave() }
             completion(shouldTerminate)
         }
     }

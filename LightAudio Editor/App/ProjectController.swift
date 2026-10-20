@@ -30,6 +30,13 @@ struct ProjectMediaCollectionSnapshot {
     let projectURL: URL?
 }
 
+struct MediaImportBatchResult {
+    var imported = 0
+    var duplicates = 0
+    var errors: [String] = []
+    var cancelled = false
+}
+
 final class ProjectController {
     private struct ContinuousUndoSession {
         let actionName: String
@@ -56,6 +63,12 @@ final class ProjectController {
     weak var delegate: ProjectControllerDelegate?
 
     private let fileService = ProjectFileService()
+    private let persistenceQueue: DispatchQueue
+    private var pendingSaveRequests: Set<Int> = []
+    private var appliedSaveRequest = 0
+    private var documentGeneration = 0
+    private var saveRequest = 0
+    private var editRevision = 0
     private let importService = MediaImportService()
     private let relinkService = MediaRelinkService()
     private let resolver = FileReferenceResolver()
@@ -71,7 +84,8 @@ final class ProjectController {
     private var mediaCacheGeneration = 0
     private var projectGeneration = 0
     private var sourceVerificationTasks: [UUID: ExportCancellationToken] = [:]
-    private let sourceVerificationQueue = DispatchQueue(label: "com.lightaudio.source-verification", qos: .utility)
+    private let sourceVerificationQueue: DispatchQueue
+    private var verificationWaiters: [UUID: () -> Void] = [:]
     private var importingMediaPaths: [String: Int] = [:]
     private var continuousUndoSession: ContinuousUndoSession?
     private var continuousEditMediaAvailability: Bool?
@@ -89,7 +103,10 @@ final class ProjectController {
         selectedClipIDs.count == 1 ? selectedClipIDs.first : nil
     }
     var playheadTime: TimeInterval = 0
-    private(set) var isDirty = false
+    private var hasUnsavedEdits = false
+    var isDirty: Bool { hasUnsavedEdits || !pendingSaveRequests.isEmpty }
+    var isSaving: Bool { !pendingSaveRequests.isEmpty }
+    var isEditingContinuously: Bool { continuousUndoSession != nil }
     private(set) var audioRenderRevision = 0
     private var clipClipboard: ClipClipboard?
     /// Rechecks source files that may have moved or been removed since the project was opened.
@@ -103,6 +120,7 @@ final class ProjectController {
         let currentlyMissingIDs = Set(project.missingAssets.map(\.id))
 
         startSourceVerifications()
+        resumeVerificationWaiters()
         let currentlyVerifyingIDs = Set(project.assets.filter { $0.isVerifyingSource }.map(\.id))
         guard previouslyMissingIDs != currentlyMissingIDs || previouslyVerifyingIDs != currentlyVerifyingIDs
                 || previousTimestamps != project.assets.map(\.sourceModificationTimestamp) else { return missing }
@@ -128,6 +146,8 @@ final class ProjectController {
     init(
         recoveryService: AutosaveRecoveryService,
         proxyService: MediaProxyService = MediaProxyService(),
+        sourceVerificationQueue: DispatchQueue = DispatchQueue(label: "com.lightaudio.source-verification", qos: .utility),
+        persistenceQueue: DispatchQueue = DispatchQueue(label: "com.lightaudio.document-writes", qos: .utility),
         undoManagerProvider: @escaping () -> UndoManager? = {
             #if canImport(AppKit)
             return NSApp.mainWindow?.undoManager
@@ -136,6 +156,8 @@ final class ProjectController {
             #endif
         }
     ) {
+        self.persistenceQueue = persistenceQueue
+        self.sourceVerificationQueue = sourceVerificationQueue
         self.recoveryService = recoveryService
         self.proxyService = proxyService
         self.undoManagerProvider = undoManagerProvider
@@ -161,7 +183,7 @@ final class ProjectController {
 
     func newProject() {
         recoveryService.discardSnapshot(forProjectID: project.id)
-        resetTransientProjectState()
+        resetTransientProjectState(documentChanged: true)
         project = Project.empty()
         projectURL = nil
         selectedClipIDs = []
@@ -176,7 +198,7 @@ final class ProjectController {
         do {
             let (loaded, missing) = try fileService.load(from: url, deferUncachedChecks: true)
             recoveryService.discardSnapshot(forProjectID: project.id)
-            resetTransientProjectState()
+            resetTransientProjectState(documentChanged: true)
             project = loaded
             sanitizeCrossfades()
             projectURL = url
@@ -201,13 +223,13 @@ final class ProjectController {
         do {
             var recoveredProject = snapshot.project
             let missing = try fileService.prepareForOpening(&recoveredProject, projectURL: snapshot.originalProjectURL, deferUncachedChecks: true)
-            resetTransientProjectState()
+            resetTransientProjectState(documentChanged: true)
             project = recoveredProject
             sanitizeCrossfades()
             projectURL = snapshot.originalProjectURL
             selectedClipIDs = []
             clearSaveCheckpoint()
-            isDirty = true
+            hasUnsavedEdits = true
             recoveryService.updateProjectURL(projectURL)
             notify()
             prepareAvailableAssets()
@@ -224,25 +246,20 @@ final class ProjectController {
 
     func save(to url: URL? = nil) -> Bool {
         guard let destination = url ?? projectURL else { return false }
+        saveRequest &+= 1
+        let request = saveRequest
         do {
-            var copy = project
-            for index in copy.assets.indices {
-                let asset = copy.assets[index]
-                let resolvedURL = resolver.resolvedURL(for: asset, projectURL: projectURL)
-                // An offline asset's persisted original/relative references are the only reliable
-                // way to find it again. Never replace them with a stale fallback while saving.
-                guard !asset.isMissing,
-                      FileManager.default.fileExists(atPath: resolvedURL.path) else {
-                    continue
-                }
-                copy.assets[index].originalPath = resolvedURL.path
-                copy.assets[index].resolvedPath = resolvedURL.path
-                copy.assets[index].relativePath = resolver.relativePath(for: resolvedURL, projectURL: destination)
+            let snapshot = project, origin = projectURL
+            let (copy, fingerprint) = try persistenceQueue.sync {
+                try Self.persist(snapshot, from: origin, to: destination)
             }
-            copy = try fileService.save(copy, to: destination)
+            appliedSaveRequest = request
+            pendingSaveRequests.removeAll() // The synchronous writer is a barrier for all earlier requests.
             project = copy
             projectURL = destination
-            captureSaveCheckpoint()
+            savedEditableFingerprint = fingerprint
+            savedProjectURLPath = normalizedProjectURLPath(destination)
+            hasUnsavedEdits = fingerprint == nil
             recoveryService.updateProjectURL(destination)
             recoveryService.discardSnapshot(forProjectID: project.id)
             notify()
@@ -253,17 +270,105 @@ final class ProjectController {
         }
     }
 
+    /// One serial writer orders background autosaves with explicit save/switch/background barriers.
+    /// Completion never replaces an edited model or marks a newer revision as saved.
+    func saveAsynchronously(to url: URL? = nil, completion: @escaping (Bool) -> Void) {
+        guard let destination = url ?? projectURL else { completion(false); return }
+        saveRequest &+= 1
+        let request = saveRequest, revision = editRevision, generation = documentGeneration
+        let snapshot = project, origin = projectURL
+        pendingSaveRequests.insert(request)
+        persistenceQueue.async { [weak self] in
+            let result = Result { try Self.persist(snapshot, from: origin, to: destination) }
+            DispatchQueue.main.async {
+                guard let self else { completion(false); return }
+                self.pendingSaveRequests.remove(request)
+                guard self.documentGeneration == generation, request > self.appliedSaveRequest,
+                      self.project.id == snapshot.id else { completion(false); return }
+                switch result {
+                case .success(let (saved, fingerprint)):
+                    // Every completed write is a real disk checkpoint, including one followed by
+                    // Undo or another queued save. Only a later successful write supersedes it.
+                    self.appliedSaveRequest = request
+                    self.savedEditableFingerprint = fingerprint
+                    self.savedProjectURLPath = self.normalizedProjectURLPath(destination)
+                    if origin != destination {
+                        // Rebase references without replacing live edits or preparation state.
+                        let resolver = FileReferenceResolver()
+                        for index in self.project.assets.indices {
+                            let asset = self.project.assets[index]
+                            let source = resolver.resolvedURL(for: asset, projectURL: origin)
+                            guard !asset.isMissing else { continue }
+                            self.project.assets[index].originalPath = source.path
+                            self.project.assets[index].resolvedPath = source.path
+                            self.project.assets[index].relativePath = resolver.relativePath(for: source, projectURL: destination)
+                        }
+                        self.projectURL = destination
+                        self.recoveryService.updateProjectURL(destination)
+                    }
+                    self.project.lastSavedAt = saved.lastSavedAt
+                    if self.editRevision == revision { self.hasUnsavedEdits = fingerprint == nil }
+                    else { self.updateDirtyStateFromSaveCheckpoint() }
+                    if !self.isDirty { self.recoveryService.discardSnapshot(forProjectID: snapshot.id, asynchronously: true) }
+                    self.notify()
+                    completion(true)
+                case .failure(let error):
+                    self.hasUnsavedEdits = true
+                    self.delegate?.projectController(self, didFailWith: error)
+                    completion(false)
+                }
+            }
+        }
+    }
+
+    private static func persist(_ value: Project, from origin: URL?, to destination: URL) throws -> (Project, Data?) {
+        let resolver = FileReferenceResolver()
+        var copy = value
+        for index in copy.assets.indices {
+            let asset = copy.assets[index]
+            let resolvedURL = resolver.resolvedURL(for: asset, projectURL: origin)
+            // An offline asset's persisted original/relative references are the only reliable
+            // way to find it again. Never replace them with a stale fallback while saving.
+            guard !asset.isMissing,
+                  FileManager.default.fileExists(atPath: resolvedURL.path) else {
+                continue
+            }
+            copy.assets[index].originalPath = resolvedURL.path
+            copy.assets[index].resolvedPath = resolvedURL.path
+            copy.assets[index].relativePath = resolver.relativePath(for: resolvedURL, projectURL: destination)
+        }
+        copy = try ProjectFileService().save(copy, to: destination)
+        return (copy, ProjectFileService.editableProjectFingerprint(copy))
+    }
+
     func importMedia(url: URL) {
         importMedia(url: url, addToTimeline: true, completion: nil)
     }
 
-    func importMediaToLibrary(url: URL, completion: ((MediaImportOutcome) -> Void)? = nil) {
-        importMedia(url: url, addToTimeline: false, completion: completion)
+    func importMediaToLibrary(url: URL, cancellation: ExportCancellationToken = ExportCancellationToken(), completion: ((MediaImportOutcome) -> Void)? = nil) {
+        importMedia(url: url, addToTimeline: false, cancellation: cancellation, completion: completion)
     }
 
-    private func importMedia(url: URL, addToTimeline: Bool, completion: ((MediaImportOutcome) -> Void)?) {
-        guard requireAllMediaOnline() else {
+    private func importMedia(url: URL, addToTimeline: Bool, cancellation: ExportCancellationToken = ExportCancellationToken(), completion: ((MediaImportOutcome) -> Void)?) {
+        guard !cancellation.isCancelled else { completion?(.failed(CancellationError())); return }
+        _ = refreshMediaAvailability()
+        if project.assets.contains(where: \.isVerifyingSource) {
+            let request = UUID(), generation = projectGeneration
+            let handler = cancellation.addCancellationHandler { [weak self] in
+                DispatchQueue.main.async { self?.verificationWaiters.removeValue(forKey: request)?() }
+            }
+            verificationWaiters[request] = { [weak self] in
+                cancellation.removeCancellationHandler(handler)
+                guard let self, generation == self.projectGeneration, !cancellation.isCancelled else {
+                    completion?(.failed(CancellationError())); return
+                }
+                self.importMedia(url: url, addToTimeline: addToTimeline, cancellation: cancellation, completion: completion)
+            }
+            return
+        }
+        guard !project.hasMissingAssets else {
             let error = NSError(domain: "LightAudio", code: 33, userInfo: [NSLocalizedDescriptionKey: L10n.tr("Missing media must be relinked before importing new media.")])
+            if completion == nil { delegate?.projectController(self, didFailWith: error) }
             completion?(.failed(error))
             return
         }
@@ -278,11 +383,14 @@ final class ProjectController {
         }
         let importGeneration = projectGeneration
         importingMediaPaths[path] = importGeneration
-        importService.importMedia(at: url, projectURL: projectURL) { [weak self] result in
-            guard let self = self else { return }
-            guard self.importingMediaPaths[path] == importGeneration else { return }
+        importService.importMedia(at: url, projectURL: projectURL, cancellation: cancellation) { [weak self] result in
+            guard let self, self.importingMediaPaths[path] == importGeneration else {
+                completion?(.failed(CancellationError())); return
+            }
             self.importingMediaPaths.removeValue(forKey: path)
-            guard importGeneration == self.projectGeneration else { return }
+            guard importGeneration == self.projectGeneration, !cancellation.isCancelled else {
+                completion?(.failed(CancellationError())); return
+            }
             switch result {
             case .success(let asset):
                 if let existing = self.existingAsset(for: url) ?? self.project.assets.first(where: {
@@ -290,6 +398,10 @@ final class ProjectController {
                     $0.metadata.checksum == asset.metadata.checksum
                 }) {
                     completion?(.duplicate(existing))
+                    return
+                }
+                if addToTimeline && !TimelineViewState.isValidTimelineTime(self.playheadTime + asset.metadata.duration) {
+                    completion?(.failed(self.projectError(code: 64, message: L10n.tr("The media extends beyond the timeline limit."))))
                     return
                 }
                 self.registerUndo("Import Media")
@@ -310,10 +422,44 @@ final class ProjectController {
                 self.prepareAsset(asset.id)
                 completion?(.imported(asset))
             case .failure(let error):
-                self.delegate?.projectController(self, didFailWith: error)
+                if completion == nil { self.delegate?.projectController(self, didFailWith: error) }
                 completion?(.failed(error))
             }
         }
+    }
+
+    private func resumeVerificationWaiters() {
+        guard !project.assets.contains(where: \.isVerifyingSource) else { return }
+        let pending = Array(verificationWaiters.values)
+        verificationWaiters.removeAll()
+        pending.forEach { DispatchQueue.main.async(execute: $0) }
+    }
+
+    func importMediaBatch(_ urls: [URL], cancellation: ExportCancellationToken,
+                          progress: @escaping (Int, Int) -> Void,
+                          completion: @escaping (MediaImportBatchResult) -> Void) {
+        let generation = projectGeneration
+        let files = Array(Set(urls.map(\.standardizedFileURL))).sorted { $0.path < $1.path }
+        func next(_ index: Int, _ result: MediaImportBatchResult) {
+            var result = result
+            guard !cancellation.isCancelled, generation == projectGeneration else {
+                result.cancelled = true; completion(result); return
+            }
+            guard index < files.count else { completion(result); return }
+            progress(index, files.count)
+            importMediaToLibrary(url: files[index], cancellation: cancellation) { outcome in
+                switch outcome {
+                case .imported: result.imported += 1
+                case .duplicate, .alreadyImporting: result.duplicates += 1
+                case .failed(let error):
+                    if !(error is CancellationError), !cancellation.isCancelled {
+                        result.errors.append(files[index].lastPathComponent + ": " + error.localizedDescription)
+                    }
+                }
+                DispatchQueue.main.async { next(index + 1, result) }
+            }
+        }
+        next(0, MediaImportBatchResult())
     }
 
     @discardableResult
@@ -329,11 +475,13 @@ final class ProjectController {
     @discardableResult
     func addAssetToTimeline(_ assetID: UUID, at timelineStart: TimeInterval, trackIndex: Int) -> TimelinePlacementResult? {
         guard requireAllMediaOnline() else { return nil }
-        guard let asset = project.asset(id: assetID) else { return nil }
+        guard let asset = project.asset(id: assetID),
+              TimelineViewState.isValidTimelineTime(timelineStart),
+              TimelineViewState.isValidTimelineTime(timelineStart + asset.metadata.duration) else { return nil }
         let requestedTrack = max(0, trackIndex)
         let existingTrackCount = project.timeline.tracks.count
         let baseTrackCount = max(existingTrackCount, 1)
-        let maximumTargetTrack = min(63, baseTrackCount + 4 - 1)
+        let maximumTargetTrack = baseTrackCount + 4 - 1
         let targetTrack = min(requestedTrack, maximumTargetTrack)
         if targetTrack < existingTrackCount, project.timeline.tracks[targetTrack].isLocked {
             showLockedTrackError()
@@ -386,7 +534,7 @@ final class ProjectController {
     }
 
     func setPlayhead(_ time: TimeInterval) {
-        playheadTime = max(0, time)
+        playheadTime = TimelineViewState.clampedTimelineTime(time) ?? 0
         notify()
     }
 
@@ -749,7 +897,7 @@ final class ProjectController {
     }
 
     func trimClip(_ clipID: UUID, edge: TimelineTrimEdge, to timelineTime: TimeInterval) {
-        guard requireAllMediaOnline() else { return }
+        guard requireAllMediaOnline(), TimelineViewState.isValidTimelineTime(timelineTime) else { return }
         guard clipIsEditable(clipID) else { return }
         let sourceDuration = locateClip(clipID).flatMap { location in
             project.asset(id: project.timeline.tracks[location.track].clips[location.clip].sourceAssetID)?.metadata.duration
@@ -961,7 +1109,7 @@ final class ProjectController {
     }
 
     func setCrossfadeCurve(involving clipID: UUID, curve: CrossfadeCurve) {
-        guard requireAllMediaOnline() else { return }
+        guard requireAllMediaOnline(), clipIsEditable(clipID) else { return }
         let indexes = project.timeline.crossfades.indices.filter {
             project.timeline.crossfades[$0].leadingClipID == clipID || project.timeline.crossfades[$0].trailingClipID == clipID
         }
@@ -975,17 +1123,18 @@ final class ProjectController {
 
     func removeCrossfadesForSelectedClips() {
         guard requireAllMediaOnline() else { return }
-        guard !selectedClipIDs.isEmpty else { return }
+        let editableIDs = Set(selectedEditableClipLocations().map { project.timeline.tracks[$0.track].clips[$0.clip].id })
+        guard !editableIDs.isEmpty else { return }
         guard project.timeline.crossfades.contains(where: {
-            selectedClipIDs.contains($0.leadingClipID) || selectedClipIDs.contains($0.trailingClipID)
+            editableIDs.contains($0.leadingClipID) || editableIDs.contains($0.trailingClipID)
         }) else { return }
         registerUndo("Remove Crossfades")
-        removeCrossfades(involving: selectedClipIDs)
+        removeCrossfades(involving: editableIDs)
         notify(audioChanged: true)
     }
 
     func removeCrossfades(involving clipID: UUID) {
-        guard requireAllMediaOnline() else { return }
+        guard requireAllMediaOnline(), clipIsEditable(clipID) else { return }
         guard project.timeline.crossfades.contains(where: {
             $0.leadingClipID == clipID || $0.trailingClipID == clipID
         }) else { return }
@@ -2186,6 +2335,7 @@ final class ProjectController {
                         self.project.assets[index].isVerifyingSource = false
                         self.project.assets[index].isMissing = true
                         self.notify()
+                        self.resumeVerificationWaiters()
                         self.delegate?.projectController(self, didFailWith: error)
                     }
                 }
@@ -2249,9 +2399,16 @@ final class ProjectController {
         task?.cancel()
     }
 
-    private func resetTransientProjectState() {
+    private func resetTransientProjectState(documentChanged: Bool = false) {
+        if documentChanged {
+            documentGeneration &+= 1
+            pendingSaveRequests.removeAll()
+        }
         sourceVerificationTasks.values.forEach { $0.cancel() }; sourceVerificationTasks.removeAll()
         projectGeneration &+= 1
+        let waiting = Array(verificationWaiters.values)
+        verificationWaiters.removeAll()
+        waiting.forEach { DispatchQueue.main.async(execute: $0) }
         importingMediaPaths.removeAll()
         clipClipboard = nil
         continuousUndoSession = nil
@@ -2285,6 +2442,7 @@ final class ProjectController {
         updated.waveformFailureReason = nil
         updated.proxyStatus = updated.requiresAudioPreparation ? .generating : .none
         project.assets[index] = updated
+        resumeVerificationWaiters()
         notify(audioChanged: true)
         prepareAsset(updated.id)
         return result
@@ -2514,6 +2672,7 @@ final class ProjectController {
     }
 
     private func registerUndo(_ name: String) {
+        editRevision &+= 1
         if var session = continuousUndoSession {
             guard !session.hasRegisteredUndo else { return }
             session.hasRegisteredUndo = true
@@ -2528,7 +2687,7 @@ final class ProjectController {
         let oldProject = project
         let oldSelected = selectedClipIDs
         let oldPlayhead = playheadTime
-        isDirty = true
+        hasUnsavedEdits = true
         guard let undoManager = undoManagerProvider() else { return }
         let ownsGroup = !undoManager.groupsByEvent && undoManager.groupingLevel == 0
         if ownsGroup { undoManager.beginUndoGrouping() }
@@ -2552,7 +2711,7 @@ final class ProjectController {
         savedProjectURLPath = normalizedProjectURLPath(projectURL)
         // Encoding should not fail for a valid project, but a failed checkpoint must never
         // make unsaved work appear clean.
-        isDirty = savedEditableFingerprint == nil
+        hasUnsavedEdits = savedEditableFingerprint == nil
     }
 
     private func clearSaveCheckpoint() {
@@ -2564,10 +2723,10 @@ final class ProjectController {
         guard let savedEditableFingerprint,
               normalizedProjectURLPath(projectURL) == savedProjectURLPath,
               let currentFingerprint = editableProjectFingerprint(project) else {
-            isDirty = true
+            hasUnsavedEdits = true
             return
         }
-        isDirty = currentFingerprint != savedEditableFingerprint
+        hasUnsavedEdits = currentFingerprint != savedEditableFingerprint
     }
 
     private func editableProjectFingerprint(_ value: Project) -> Data? {

@@ -316,7 +316,7 @@ final class PlatformParityTests: XCTestCase {
     func testAutomationPanelNumericEditingAndLockState() throws {
         let p = try project(finalAuditPCM()); load(p)
         let id = p.timeline.tracks[0].clips[0].id
-        for target in [AutomationTarget.clipPan(id), .trackVolume(p.timeline.tracks[0].id)] {
+        for target in [AutomationTarget.clipVolume(id), .clipPan(id), .trackVolume(p.timeline.tracks[0].id)] {
             let panel = AutomationEditorController(controller: controller, target: target)
             defer { panel.close() }
             let content = try XCTUnwrap(panel.window?.contentView)
@@ -329,6 +329,8 @@ final class PlatformParityTests: XCTestCase {
             add.performClick(nil)
             if target.isPan {
                 XCTAssertEqual(controller.project.timeline.tracks[0].clips[0].panAutomationKeyframes.first?.pan, -50)
+            } else if target.isClip {
+                XCTAssertEqual(controller.project.timeline.tracks[0].clips[0].volumeAutomationKeyframes.first?.gainDB, -6)
             } else {
                 XCTAssertEqual(controller.project.timeline.tracks[0].volumeAutomationKeyframes.first?.gainDB, -6)
             }
@@ -514,5 +516,311 @@ extension PlatformParityTests {
             if silent { XCTAssertEqual(energy, 0, accuracy: 0.000001) }
             else { XCTAssertGreaterThan(energy / Double(count), 0.01) }
         }
+    }
+}
+
+extension PlatformParityTests {
+    func testRoundTwoLockedCrossfadesIgnoreAllMutationCommands() throws {
+        var p = try project(finalAuditPCM())
+        let a = p.timeline.tracks[0].clips[0]
+        let b = Clip(sourceAssetID: a.sourceAssetID, timelineStart: 0.5, sourceStart: 0, sourceEnd: 1)
+        p.timeline.tracks[0].clips.append(b)
+        p.timeline.tracks[0].isLocked = true
+        p.timeline.crossfades = [.init(leadingClipID: a.id, trailingClipID: b.id, startTime: 0.5, duration: 0.5)]
+        p.recalculateDuration(); load(p); waitForPreparation()
+        let before = controller.project.timeline.crossfades
+        controller.selectClip(a.id)
+        controller.setCrossfadeCurve(involving: a.id, curve: .equalPower)
+        controller.removeCrossfades(involving: a.id)
+        controller.removeCrossfadesForSelectedClips()
+        XCTAssertEqual(controller.project.timeline.crossfades, before)
+        XCTAssertFalse(history.canUndo)
+        controller.toggleLock(trackID: p.timeline.tracks[0].id)
+        controller.removeCrossfadesForSelectedClips()
+        XCTAssertTrue(controller.project.timeline.crossfades.isEmpty)
+        history.undo()
+        XCTAssertEqual(controller.project.timeline.crossfades, before)
+    }
+
+    func testRoundTwoTrack65AndInvalidTimelinePlacement() throws {
+        var p = try project(finalAuditPCM())
+        p.timeline.tracks = (1...64).map { Track(name: "A\($0)") }
+        load(p); waitForPreparation()
+        let id = p.assets[0].id
+        let placed = try XCTUnwrap(controller.addAssetToTimeline(id, at: 0, trackIndex: 64))
+        XCTAssertEqual(placed.targetTrackName, "A65"); XCTAssertFalse(placed.wasTrackClamped)
+        XCTAssertEqual(controller.project.timeline.tracks[64].clips.count, 1)
+        let before = controller.project
+        for invalid in [-1, Double.nan, .infinity, TimelineViewState.maximumTimelineTime - 0.5] {
+            XCTAssertNil(controller.addAssetToTimeline(id, at: invalid, trackIndex: 0))
+        }
+        XCTAssertEqual(ProjectFileService.editableProjectFingerprint(controller.project), ProjectFileService.editableProjectFingerprint(before))
+        for invalid in [Double.nan, .infinity, -.infinity] {
+            controller.setPlayhead(invalid); XCTAssertTrue(controller.playheadTime.isFinite)
+        }
+        XCTAssertTrue(controller.save(to: root.appendingPathComponent("Valid.liau")))
+    }
+
+    func testRoundTwoInspectorValidatesNumbersAndExposesVolumeEditor() throws {
+        let p = try project(finalAuditPCM())
+        let inspector = InspectorViewController(); _ = inspector.view
+        inspector.update(project: p, selectedClipID: p.timeline.tracks[0].clips[0].id)
+        var value: Double?
+        inspector.onGainChanged = { value = MixMath.db(forLinearGain: $0) }
+        inspector.onPanChanged = { value = $0 * 100 }
+        inspector.onFadeInChanged = { value = $0 }
+        inspector.onFadeOutChanged = { value = $0 }
+        for (name, valid, expected, invalid) in [
+            ("gainField", "-6,5", -6.5, "13"), ("panField", "-25,5", -25.5, "101"),
+            ("fadeInField", "0,5", 0.5, "-1"), ("fadeOutField", "0,5", 0.5, "2")
+        ] {
+            let field = try XCTUnwrap(Mirror(reflecting: inspector).children.first { $0.label == name }?.value as? NSTextField)
+            for input in ["invalid", "NaN", "inf", "", invalid] {
+                value = nil; field.stringValue = input
+                _ = inspector.perform(NSSelectorFromString(name + "Changed"))
+                XCTAssertNil(value, "\(name): \(input)")
+            }
+            field.stringValue = valid; _ = inspector.perform(NSSelectorFromString(name + "Changed"))
+            XCTAssertEqual(try XCTUnwrap(value), expected, accuracy: 0.000001)
+        }
+        var opened = false; inspector.onVolumeAutomation = { opened = true }
+        let button = try XCTUnwrap(descendants(inspector.view).compactMap { $0 as? NSButton }
+            .first { $0.title == L10n.tr("Edit Clip Volume Automation...") })
+        button.performClick(nil); XCTAssertTrue(opened)
+        var locked = p; locked.timeline.tracks[0].isLocked = true
+        inspector.update(project: locked, selectedClipID: p.timeline.tracks[0].clips[0].id)
+        XCTAssertFalse(button.isEnabled)
+    }
+
+    func testRoundTwoRelinkClearsPendingAndFailedVerification() throws {
+        let p = try project(finalAuditPCM()); var asset = p.assets[0]
+        asset.isMissing = true; asset.isVerifyingSource = true; asset.sourceVerificationFailure = "Old failure"
+        let result = MediaRelinkService().verifyAndRelink(asset: asset,
+            replacementURL: URL(fileURLWithPath: asset.originalPath), projectURL: nil)
+        let updated = try XCTUnwrap(result.updatedAsset)
+        XCTAssertTrue(result.accepted); XCTAssertFalse(updated.isMissing)
+        XCTAssertFalse(updated.isVerifyingSource); XCTAssertNil(updated.sourceVerificationFailure)
+    }
+
+    private func coldController() throws -> (ProjectController, DispatchSemaphore, URL) {
+        let p = try project(finalAuditPCM("cold.caf"))
+        let document = root.appendingPathComponent("Cold.liau")
+        try ProjectFileService().save(p, to: document)
+        FileMetadataHasher.clearVerificationCache()
+        let queue = DispatchQueue(label: "test.round2.verification"), gate = DispatchSemaphore(value: 0)
+        queue.async { gate.wait() }
+        let c = ProjectController(recoveryService: recovery, sourceVerificationQueue: queue)
+        XCTAssertTrue(c.open(url: document)); XCTAssertTrue(c.project.assets[0].isVerifyingSource)
+        return (c, gate, try finalAuditPCM("new.caf") { _, _ in 0.3 })
+    }
+
+    func testRoundTwoImportWaitsForVerificationAndResumesOnce() throws {
+        let (c, gate, source) = try coldController()
+        defer { gate.signal(); c.newProject() }
+        var completed = false
+        let done = expectation(description: "Import after verification")
+        c.importMediaToLibrary(url: source) { outcome in
+            if case .imported = outcome {} else { XCTFail("Expected imported: \(outcome)") }
+            completed = true; done.fulfill()
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertFalse(completed); XCTAssertEqual(c.project.assets.count, 1)
+        gate.signal(); wait(for: [done], timeout: 10)
+        XCTAssertEqual(c.project.assets.count, 2); XCTAssertFalse(c.project.hasMissingAssets)
+    }
+
+    func testRoundTwoWaitingImportCancelsAndDocumentSwitchDropsOldWork() throws {
+        for switchDocument in [false, true] {
+            let (c, gate, source) = try coldController()
+            let token = ExportCancellationToken(), done = expectation(description: "Cancelled pending import")
+            c.importMediaToLibrary(url: source, cancellation: token) { outcome in
+                if case .failed(let error) = outcome { XCTAssertTrue(error is CancellationError) }
+                else { XCTFail("Expected cancellation") }
+                done.fulfill()
+            }
+            if switchDocument { c.newProject() } else { token.cancel() }
+            wait(for: [done], timeout: 3)
+            XCTAssertEqual(c.project.assets.count, switchDocument ? 0 : 1)
+            gate.signal(); c.newProject()
+        }
+    }
+
+    func testRoundTwoBatchCancelKeepsAcceptedMediaAndDeduplicates() throws {
+        let sources = try (0..<4).map { i in try finalAuditPCM("\(i).caf") { _, _ in Float(i + 1) / 10 } }
+        let token = ExportCancellationToken(), done = expectation(description: "Cancel batch")
+        controller.importMediaBatch(sources + [sources[0]], cancellation: token, progress: { count, total in
+            XCTAssertEqual(total, 4)
+            if count == 2 { token.cancel() }
+        }) { result in
+            XCTAssertEqual(result.imported, 2); XCTAssertTrue(result.cancelled); XCTAssertTrue(result.errors.isEmpty)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 10)
+        XCTAssertEqual(controller.project.assets.count, 2)
+        let retry = expectation(description: "Resume batch")
+        controller.importMediaBatch(sources, cancellation: .init(), progress: { _, _ in }) { result in
+            XCTAssertEqual(result.imported, 2); XCTAssertEqual(result.duplicates, 2); XCTAssertFalse(result.cancelled)
+            retry.fulfill()
+        }
+        wait(for: [retry], timeout: 10); XCTAssertEqual(controller.project.assets.count, 4)
+    }
+
+    func testRoundTwoBatchRejectsMissingSourceWithoutPartialPublication() throws {
+        var p = try project(finalAuditPCM())
+        try FileManager.default.removeItem(atPath: p.assets[0].originalPath)
+        p.assets[0].isMissing = true; load(p)
+        let source = try finalAuditPCM("new.caf"), done = expectation(description: "Missing source blocks import")
+        controller.importMediaBatch([source], cancellation: .init(), progress: { _, _ in }) { result in
+            XCTAssertEqual(result.imported, 0); XCTAssertEqual(result.errors.count, 1); done.fulfill()
+        }
+        wait(for: [done], timeout: 5); XCTAssertEqual(controller.project.assets.count, 1)
+    }
+
+    func testRoundTwoAsyncSaveOrderingUndoAndCorrectiveSave() throws {
+        let queue = DispatchQueue(label: "test.round2.writer")
+        let c = ProjectController(recoveryService: recovery, persistenceQueue: queue, undoManagerProvider: { self.history })
+        let url = root.appendingPathComponent("Async.liau"); XCTAssertTrue(c.save(to: url))
+        c.renameProject("First")
+        let gate = DispatchSemaphore(value: 0); queue.async { gate.wait() }
+        let first = expectation(description: "First save"), second = expectation(description: "Second save")
+        c.saveAsynchronously { success in XCTAssertTrue(success); first.fulfill() }
+        history.undo(); history.redo(); c.renameProject("Second")
+        c.saveAsynchronously { success in XCTAssertTrue(success); second.fulfill() }
+        history.undo(); XCTAssertTrue(c.isDirty); XCTAssertTrue(c.isSaving)
+        gate.signal(); wait(for: [first, second], timeout: 5)
+        XCTAssertEqual(c.project.name, "First"); XCTAssertEqual(try ProjectFileService().load(from: url).0.name, "Second")
+        XCTAssertTrue(c.isDirty)
+        let corrected = expectation(description: "Corrective save")
+        c.saveAsynchronously { success in XCTAssertTrue(success); corrected.fulfill() }
+        wait(for: [corrected], timeout: 5)
+        XCTAssertEqual(try ProjectFileService().load(from: url).0.name, "First"); XCTAssertFalse(c.isDirty)
+    }
+
+    func testRoundTwoAsyncInitialSaveRetainsNewerEditsAndRebasesReferences() throws {
+        let queue = DispatchQueue(label: "test.round2.initialsave")
+        let c = ProjectController(recoveryService: recovery, persistenceQueue: queue)
+        let p = try project(finalAuditPCM())
+        XCTAssertTrue(c.restore(snapshot: .init(createdAt: Date(), originalProjectURL: nil, project: p)))
+        let gate = DispatchSemaphore(value: 0); queue.async { gate.wait() }
+        let url = root.appendingPathComponent("Initial.liau"), done = expectation(description: "Initial save")
+        c.saveAsynchronously(to: url) { success in XCTAssertTrue(success); done.fulfill() }
+        c.renameProject("Newer edit"); gate.signal(); wait(for: [done], timeout: 5)
+        XCTAssertEqual(c.projectURL, url); XCTAssertEqual(c.project.name, "Newer edit"); XCTAssertTrue(c.isDirty)
+        XCTAssertEqual(try ProjectFileService().load(from: url).0.name, p.name)
+        XCTAssertEqual(c.project.assets[0].relativePath, "tone.caf")
+        XCTAssertTrue(c.save()); XCTAssertFalse(c.isDirty)
+        XCTAssertEqual(try ProjectFileService().load(from: url).0.name, "Newer edit")
+    }
+
+    func testRoundTwoAsyncFailureAndDocumentSwitchDoNotClearNewerState() throws {
+        controller.renameProject("Keep me")
+        let failed = expectation(description: "Failed async save")
+        controller.saveAsynchronously(to: root.appendingPathComponent("Absent/Failed.liau")) { success in
+            XCTAssertFalse(success); failed.fulfill()
+        }
+        wait(for: [failed], timeout: 5)
+        XCTAssertTrue(controller.isDirty); XCTAssertNil(controller.projectURL); XCTAssertEqual(controller.project.name, "Keep me")
+        let queue = DispatchQueue(label: "test.round2.switch")
+        let c = ProjectController(recoveryService: recovery, persistenceQueue: queue)
+        let gate = DispatchSemaphore(value: 0); queue.async { gate.wait() }
+        let done = expectation(description: "Old save callback")
+        c.saveAsynchronously(to: root.appendingPathComponent("Old.liau")) { success in XCTAssertFalse(success); done.fulfill() }
+        c.newProject(); c.renameProject("Current"); let id = c.project.id
+        gate.signal(); wait(for: [done], timeout: 5)
+        XCTAssertEqual(c.project.id, id); XCTAssertEqual(c.project.name, "Current")
+        XCTAssertNil(c.projectURL); XCTAssertTrue(c.isDirty); XCTAssertFalse(c.isSaving)
+    }
+
+    func testRoundTwoMainWindowAutosavesOnlyNamedProjectsAndHonorsPreference() throws {
+        let previous = UserDefaults.standard.object(forKey: "AutomaticallySaveChanges")
+        defer { UserDefaults.standard.set(previous, forKey: "AutomaticallySaveChanges") }
+        EditorPreferences.automaticallySaveChanges = true
+        let window = MainWindowController(projectController: controller)
+        defer { controller.delegate = nil; window.window?.orderOut(nil) }
+        controller.renameProject("Untitled edit")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertNil(controller.projectURL); XCTAssertTrue(controller.isDirty)
+        let url = root.appendingPathComponent("Autosave.liau"); XCTAssertTrue(controller.save(to: url))
+        controller.renameProject("Autosaved rename")
+        wait(for: [expectation(for: NSPredicate { _, _ in !self.controller.isDirty }, evaluatedWith: nil)], timeout: 5)
+        XCTAssertEqual(try ProjectFileService().load(from: url).0.name, "Autosaved rename")
+        EditorPreferences.automaticallySaveChanges = false
+        controller.renameProject("Manual save only")
+        RunLoop.current.run(until: Date().addingTimeInterval(1.1))
+        XCTAssertTrue(controller.isDirty); XCTAssertEqual(try ProjectFileService().load(from: url).0.name, "Autosaved rename")
+    }
+
+    func testRoundTwoCacheMeasurementAndAppearanceControls() throws {
+        let cache = root.appendingPathComponent("Caches")
+        for (name, size) in [("Waveforms", 123), ("Media Proxies", 456), ("Recovery", 789)] {
+            let dir = cache.appendingPathComponent(name); try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data(repeating: 0, count: size).write(to: dir.appendingPathComponent("data"))
+        }
+        let external = root.appendingPathComponent("External.bin"); try Data(repeating: 0, count: 999).write(to: external)
+        try FileManager.default.createSymbolicLink(at: cache.appendingPathComponent("Waveforms/External"), withDestinationURL: external)
+        let service = ApplicationCacheService(applicationSupportDirectory: cache), done = expectation(description: "Cache usage")
+        service.measureApplicationCaches { result in
+            do {
+                let usage = try result.get(); XCTAssertEqual(usage.waveformBytes, 123)
+                XCTAssertEqual(usage.proxyBytes, 456); XCTAssertEqual(usage.recoveryBytes, 789); XCTAssertEqual(usage.totalBytes, 1368)
+            } catch { XCTFail("\(error)") }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+        let previous = UserDefaults.standard.object(forKey: "EditorAppearance"), appearance = NSApp.appearance
+        defer { UserDefaults.standard.set(previous, forKey: "EditorAppearance"); NSApp.appearance = appearance }
+        let preferences = PreferencesWindowController(cacheService: service) { _ in XCTFail("Measurement must not clear caches") }
+        defer { preferences.close() }
+        let content = try XCTUnwrap(preferences.window?.contentView); content.layoutSubtreeIfNeeded()
+        let popup = try XCTUnwrap(descendants(content).compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles.contains(L10n.tr("Dark")) })
+        for (index, expected) in [(1, NSAppearance.Name.aqua), (2, .darkAqua)] {
+            popup.selectItem(at: index); popup.sendAction(popup.action, to: popup.target)
+            XCTAssertEqual(NSApp.appearance?.name, expected)
+        }
+        popup.selectItem(at: 0); popup.sendAction(popup.action, to: popup.target)
+        XCTAssertNil(NSApp.appearance); XCTAssertTrue(FileManager.default.fileExists(atPath: external.path))
+    }
+
+    func testRoundTwoSequentialExportReleasesDecodersAndPreservesSamples() throws {
+        var p = try project(finalAuditPCM(frames: 4410))
+        p.timeline.tracks[0].clips = (0..<160).map { Clip(sourceAssetID: p.assets[0].id,
+            timelineStart: Double($0) * 0.1, sourceStart: 0, sourceEnd: 0.1) }
+        p.recalculateDuration()
+        func descriptors() -> Int { (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count) ?? 0 }
+        let baseline = descriptors(), done = expectation(description: "Sequential export")
+        var peak = baseline
+        let output = root.appendingPathComponent("Sequence.wav"), exportProject = p
+        DispatchQueue.global().async {
+            do {
+                _ = try NativeAudioExportBackend().export(project: exportProject,
+                    settings: .init(format: .wav, sampleRate: 44100, channelCount: 2, bitrate: nil, outputURL: output),
+                    cancellationToken: .init(), progress: { _ in peak = max(peak, descriptors()) })
+            } catch { XCTFail("\(error)") }
+            DispatchQueue.main.async { done.fulfill() }
+        }
+        wait(for: [done], timeout: 30)
+        XCTAssertLessThan(peak - baseline, 16, "Completed clip decoders must be released")
+        let buffer = try pcm(output); XCTAssertEqual(buffer.frameLength, 16 * 44100)
+        for frame in stride(from: 0, to: Int(buffer.frameLength), by: 137) {
+            XCTAssertEqual(buffer.floatChannelData![0][frame], 0.2, accuracy: 0.000002)
+        }
+    }
+}
+
+extension PlatformParityTests {
+    func testRoundTwoQueuedInitialSavesUseLatestDiskCheckpoint() throws {
+        let queue = DispatchQueue(label: "test.round2.firstsaves")
+        let c = ProjectController(recoveryService: recovery, persistenceQueue: queue)
+        let gate = DispatchSemaphore(value: 0); queue.async { gate.wait() }
+        let url = root.appendingPathComponent("Initial.liau")
+        let first = expectation(description: "First"), second = expectation(description: "Second")
+        c.renameProject("First")
+        c.saveAsynchronously(to: url) { success in XCTAssertTrue(success); first.fulfill() }
+        c.renameProject("Second")
+        c.saveAsynchronously(to: url) { success in XCTAssertTrue(success); second.fulfill() }
+        gate.signal(); wait(for: [first, second], timeout: 5)
+        XCTAssertEqual(c.projectURL, url); XCTAssertEqual(c.project.name, "Second")
+        XCTAssertEqual(try ProjectFileService().load(from: url).0.name, "Second")
+        XCTAssertFalse(c.isDirty); XCTAssertFalse(c.isSaving)
     }
 }

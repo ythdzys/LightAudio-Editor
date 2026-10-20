@@ -1,0 +1,230 @@
+{
+  "date": "2026-10-20",
+  "scope": "Second audit after macOS parity commit; no application or regression-test source changed.",
+  "macos_commit": "6ba1c664873eee986052407500cf889994bf54d4",
+  "ipad_head": "ce6ed49db4cd1bf5420a00d2de726cb1884f273e",
+  "ipad_reference": "Current working tree, including pre-existing uncommitted relinking changes.",
+  "source_manifest_files": 75,
+  "source_manifest_match": true,
+  "findings": [
+    {
+      "id": "locked-crossfade",
+      "priority": 2,
+      "kind": "reproduced defect",
+      "title": "Crossfade changes bypass track locks",
+      "detail": "The desktop Remove Crossfades command removes a selected crossfade even on a locked track; curve-changing code has the same missing guard. The iPad editor filters selected clips through editableSelectedClips. Both shared controller implementations rely on caller guards, so the difference is the desktop entry points.",
+      "mac": "LightAudio Editor/App/ProjectController.swift:976",
+      "ipad": "iPadOS/Editor/IPadEditorStore.swift:338",
+      "validation": "macOS controller used by menu: one crossfade before, zero after, track still locked. iPad UI filtering verified by source inspection; not executed on an iPad."
+    },
+    {
+      "id": "track-64-cap",
+      "priority": 2,
+      "kind": "reproduced defect",
+      "title": "Media insertion silently clamps to track 64",
+      "detail": "Desktop Add to new track and timeline drops cap target indices at 63, while addTrack and project loading allow more tracks. With 64 tracks, insertion intended for A65 lands in A64; drops on existing later tracks also clamp. iPad permits the requested track.",
+      "mac": "LightAudio Editor/App/ProjectController.swift:336; LightAudio Editor/UI/TimelineView.swift:1821",
+      "ipad": "Shared/App/ProjectController.swift:386",
+      "validation": "Same 64-track fixture: macOS remains 64 tracks, target A64, clamped=true; iPad shared code makes A65, 65 tracks, clamped=false."
+    },
+    {
+      "id": "pending-verification-import",
+      "priority": 2,
+      "kind": "reproduced defect with UI-path analysis",
+      "title": "First import fails while valid existing media is being verified",
+      "detail": "The desktop batch loop immediately calls importMediaToLibrary. That rejects pending verification and returns a missing-media error; nothing retains/resumes the request. The iPad coordinator distinguishes pending from confirmed missing, retains the batch and resumes after verification, with cancellation support.",
+      "mac": "LightAudio Editor/App/MainWindowController.swift:648; LightAudio Editor/App/ProjectController.swift:264",
+      "ipad": "iPadOS/Editor/IPadEditorStore.swift:974",
+      "validation": "Valid 70.56 MB PCM source with cold checksum cache: immediate new-media import fails; existing source subsequently verifies successfully. The shared controller rejects this call on both platforms; iPad parity is supplied by its UI coordinator, which was inspected, not executed here."
+    },
+    {
+      "id": "export-decoder-lifetime",
+      "priority": 2,
+      "kind": "reproduced resource-scaling gap",
+      "title": "Completed export clips retain open decoders until the export ends",
+      "detail": "The desktop source cache retains a TimelineAudioSource per clip. The iPad backend removes each source once its clip has finished. Desktop descriptor and converter memory use therefore grows with every clip processed, including non-overlapping splits of one source.",
+      "mac": "LightAudio Editor/Services/ExportService.swift:271",
+      "ipad": "Shared/Services/ExportService.swift:215",
+      "validation": "160 sequential clips of one source: desktop descriptor growth 160 (peak 165), iPad shared backend growth 2 (peak 6). Both exports succeeded; resource exhaustion and memory growth were not measured."
+    },
+    {
+      "id": "inspector-numeric-validation",
+      "priority": 2,
+      "kind": "reproduced control defect",
+      "title": "Existing inspector fields silently convert invalid or comma-decimal text to zero",
+      "detail": "Gain, pan and fade fields still use NSTextField.doubleValue. The actual fade action treats 0,5 as 0 seconds, and invalid as 0, potentially clearing a fade. The iPad fade editor uses NumericInput.number, accepting decimal commas and disabling invalid values. The new desktop automation/export panels already use the safer parser, making the desktop itself inconsistent.",
+      "mac": "LightAudio Editor/UI/InspectorViewController.swift:472",
+      "ipad": "iPadOS/Editor/ClipToolsView.swift:121",
+      "validation": "Actual macOS inspector action: 0,5 -> 0; invalid -> 0; 0.5 -> 0.5. No window was presented; controls were invoked directly. iPad validation checked in source."
+    },
+    {
+      "id": "timeline-bounds",
+      "priority": 2,
+      "kind": "reproduced edge-case defect",
+      "title": "Placement and playhead setters miss shared time bounds",
+      "detail": "Desktop insertion accepts a clip whose end exceeds the supported 8,000,000-second limit, leaving an unsaveable project; iPad rejects it before editing. Desktop also accepts an infinite playhead, while iPad resets it to a safe value. The maximum is an extreme case, but the desktop canvas at minimum zoom can represent times beyond it.",
+      "mac": "LightAudio Editor/App/ProjectController.swift:330; LightAudio Editor/App/ProjectController.swift:388",
+      "ipad": "Shared/App/ProjectController.swift:379; Shared/App/ProjectController.swift:439",
+      "validation": "Insert 0.1-second source at 7,999,999.95: desktop accepts, save fails; iPad rejects, existing project remains saveable. Infinite playhead is retained only by desktop."
+    },
+    {
+      "id": "relink-pending-state",
+      "priority": 3,
+      "kind": "reproduced transient-state mismatch",
+      "title": "Accepted relink retains stale verification flags",
+      "detail": "Desktop MediaRelinkService clears isMissing but leaves isVerifyingSource and sourceVerificationFailure from the old asset. The controller cancels the old verification job when applying the replacement, so the returned asset can still show Verifying source until a later availability refresh. The current iPad working tree clears both fields.",
+      "mac": "LightAudio Editor/Services/MediaRelinkService.swift:75; LightAudio Editor/App/ProjectController.swift:2283",
+      "ipad": "Shared/Services/MediaRelinkService.swift:76",
+      "validation": "Identical replacement accepted by both services; isVerifyingSource remains true on desktop and is false on iPad. This does not prove permanent playback blockage; refresh can repair transient state."
+    },
+    {
+      "id": "clip-volume-numeric-editor",
+      "priority": 3,
+      "kind": "missing control",
+      "title": "Clip-volume automation still lacks precise time/gain editing",
+      "detail": "Desktop clip volume can be added, dragged and deleted on the timeline, but has no point table or exact numeric editor. The newly added AutomationEditor only covers clip pan and track volume. iPad ClipAudioView provides selected-point numeric time/gain editing.",
+      "mac": "LightAudio Editor/UI/InspectorViewController.swift:39; LightAudio Editor/UI/AutomationEditorController.swift:3",
+      "ipad": "iPadOS/Editor/ClipAudioView.swift:43",
+      "validation": "Source/UI action inventory; no additional runtime test."
+    },
+    {
+      "id": "rename-current-project",
+      "priority": 3,
+      "kind": "missing control",
+      "title": "Current project cannot be renamed in the desktop UI",
+      "detail": "renameProject exists but has no desktop caller. Save As now creates a separate copy with a new identity, so it is not an in-place project rename. iPad exposes the current project name and commits via renameProject.",
+      "mac": "LightAudio Editor/App/ProjectController.swift:148",
+      "ipad": "iPadOS/Editor/EditorView.swift:127; iPadOS/Editor/IPadEditorStore.swift:734",
+      "validation": "Searched all desktop Swift sources: only the method declaration refers to renameProject."
+    },
+    {
+      "id": "async-autosave",
+      "priority": 3,
+      "kind": "workflow/performance difference",
+      "title": "Desktop retains synchronous manual document saves",
+      "detail": "iPad debounces normal document autosaves by 0.8 seconds and serializes background persistence while protecting newer edits and undo checkpoints. Desktop Save performs serialization and disk I/O on the UI thread; periodic recovery snapshots do not save the normal project file. Whether to enable autosave on desktop is a product choice; responsiveness during manual saves can be improved independently.",
+      "mac": "LightAudio Editor/App/ProjectController.swift:225; LightAudio Editor/App/MainWindowController.swift:537",
+      "ipad": "Shared/App/ProjectController.swift:258; iPadOS/Editor/IPadEditorStore.swift:1318",
+      "validation": "Source-confirmed. No save-latency benchmark; do not infer corruption or data loss from the architectural difference."
+    },
+    {
+      "id": "batch-import-control",
+      "priority": 2,
+      "kind": "workflow/performance gap",
+      "title": "Batch import has no cancellation or bounded metadata-import queue",
+      "detail": "Desktop submits every file in uniqueURLs.forEach to the global metadata importer, without a batch cancellation token. The two-job scheduler covers waveforms/proxies, not this initial import phase. iPad prepares a cancellable batch and applies items sequentially. Large-batch resource usage was not stress-tested in this pass.",
+      "mac": "LightAudio Editor/App/MainWindowController.swift:648; LightAudio Editor/Services/MediaImportService.swift:8",
+      "ipad": "iPadOS/Editor/MediaTransfer.swift:85; iPadOS/Editor/IPadEditorStore.swift:960",
+      "validation": "Source-confirmed; no claim of a measured crash or memory limit violation."
+    },
+    {
+      "id": "preferences",
+      "priority": 3,
+      "kind": "missing controls",
+      "title": "Appearance override and cache size breakdown are absent",
+      "detail": "iPad provides system/light/dark selection and separate waveform, proxy and recovery byte counts with refresh. Desktop preferences expose language, automatic crossfades and cache clearing only. iPad owned-media compaction is a storage-model difference and should not be copied into desktop external-file deletion.",
+      "mac": "LightAudio Editor/UI/PreferencesWindowController.swift:5; LightAudio Editor/Services/ApplicationCacheService.swift:17",
+      "ipad": "iPadOS/Editor/PreferencesView.swift:78; iPadOS/Editor/PreferencesView.swift:103",
+      "validation": "Source/UI control inventory."
+    }
+  ],
+  "runtime_results": {
+    "macos": {
+      "exportDecoderLifetime": {
+        "baselineDescriptors": 5,
+        "clips": 160,
+        "error": "none",
+        "growth": 160,
+        "peakDescriptors": 165
+      },
+      "inspectorFadeInputs": {
+        "0,5": 0,
+        "0.5": 0.5,
+        "invalid": 0
+      },
+      "lockedCrossfadeRemoval": {
+        "after": 0,
+        "before": 1,
+        "locked": true
+      },
+      "nonfinitePlayheadAccepted": true,
+      "overflowOutputSample": 1,
+      "pendingImportSharedController": {
+        "existingSourceMissingAfterVerification": false,
+        "outcome": "Missing media must be relinked before importing new media.",
+        "pending": true
+      },
+      "relinkPendingState": {
+        "accepted": true,
+        "isVerifyingSource": true
+      },
+      "timelineBounds": {
+        "canSaveAfterPlacement": false,
+        "duration": 8000000.05,
+        "placementAccepted": true
+      },
+      "track65Placement": {
+        "clamped": true,
+        "target": "A64",
+        "trackCount": 64
+      }
+    },
+    "ipad_shared_sources_on_mac": {
+      "exportDecoderLifetime": {
+        "baselineDescriptors": 4,
+        "clips": 160,
+        "error": "none",
+        "growth": 2,
+        "peakDescriptors": 6
+      },
+      "nonfinitePlayheadAccepted": false,
+      "overflowOutputSample": 1,
+      "pendingImportSharedController": {
+        "existingSourceMissingAfterVerification": false,
+        "outcome": "Missing media must be relinked before importing new media.",
+        "pending": true
+      },
+      "relinkPendingState": {
+        "accepted": true,
+        "isVerifyingSource": false
+      },
+      "timelineBounds": {
+        "canSaveAfterPlacement": true,
+        "duration": 0,
+        "placementAccepted": false
+      },
+      "track65Placement": {
+        "clamped": false,
+        "target": "A65",
+        "trackCount": 65
+      }
+    }
+  },
+  "validation": {
+    "both_probe_executables": "completed successfully against unchanged application sources",
+    "normal_decimal_control": "0.5 remains 0.5 in the desktop fade field",
+    "overflow_control": "Both native exports produced 1.0; remaining source differences did not establish an overflow defect.",
+    "regression_suite": "Not rerun: this pass changes only audit artifacts. No large suite or future test follow-up was scheduled."
+  },
+  "limitations": [
+    "iPad shared code compiled and ran on this Mac; the SwiftUI coordinator and UI were inspected, not exercised on an iPad or Simulator.",
+    "Descriptor counts include incidental process descriptors and can vary by a few. The difference is linear growth versus approximately constant usage, not an exact promised count.",
+    "Extreme timeline/nonfinite and synthetic pending-relink cases test boundary behavior; their frequency in ordinary editing is unknown.",
+    "A rerun initially reused synthetic output filenames and hit the intentional overwrite protection. Final evidence uses fresh directories; this was a harness issue.",
+    "The macOS repository contains only new audit artifacts from this pass; no fixes have been applied or pushed."
+  ],
+  "recommended_order": [
+    "locked-crossfade",
+    "track-64-cap",
+    "pending-verification-import",
+    "inspector-numeric-validation",
+    "export-decoder-lifetime",
+    "timeline-bounds",
+    "relink-pending-state",
+    "batch-import-control",
+    "clip-volume-numeric-editor",
+    "rename-current-project",
+    "async-autosave",
+    "preferences"
+  ]
+}

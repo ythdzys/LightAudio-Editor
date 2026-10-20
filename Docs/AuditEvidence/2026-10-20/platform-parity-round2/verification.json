@@ -1,0 +1,61 @@
+{
+  "verified_at_utc": "2026-10-20T10:45:08.399922+00:00",
+  "status": "All twelve round-two audit findings implemented; full local macOS regression suite passed.",
+  "base_commit": "6ba1c664873eee986052407500cf889994bf54d4",
+  "build": "build-for-testing succeeded; build.exit 0",
+  "tests": {
+    "passed": 123,
+    "failed": 0,
+    "skipped": 0,
+    "expected_failures": 0,
+    "test_exit": 0,
+    "platform": "macOS 15.7.9 arm64, local Mac mini",
+    "summary": "test-summary.json",
+    "source_manifest": "verified-source-manifest.json",
+    "matching_source_files": 66
+  },
+  "focused_history": {
+    "initial": {
+      "passed": 14,
+      "failed": 1,
+      "cause": "New inspector volume automation button remained enabled on a locked track."
+    },
+    "repair": "Inspector controls now disable on locked tracks.",
+    "recheck": {
+      "passed": 3,
+      "failed": 0
+    },
+    "full_suite_after_repair": {
+      "passed": 123,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "coverage": [
+    "Locked crossfade mutation commands and undo; inspector numeric actions and locked controls.",
+    "Placement on track 65, invalid/nonfinite/out-of-range timeline placement, valid save afterward.",
+    "Waiting for source verification, cancellation, and document replacement before import completion.",
+    "Sequential batch cancellation, keeping accepted media, duplicate detection, and missing-source rejection.",
+    "Accepted relinks clear stale source-verification flags.",
+    "Native export of 160 sequential clips bounds open descriptors and preserves decoded samples.",
+    "Clip volume, clip pan, and track volume graph/numeric editor controls and locked state.",
+    "Asynchronous save ordering, undo, corrective save, new edits during initial save, rebased media references, write failure, switched documents, and queued initial saves.",
+    "Saved-project autosave and disabled preference; unsaved documents still require a destination.",
+    "Cache byte counts exclude symlinks; appearance controls apply system/light/dark immediately.",
+    "Existing portable video/audio collection, relinking, renderer, compressed export, recovery, localization, and editing regression coverage."
+  ],
+  "workflow_changes": {
+    "autosave": "Enabled by default for projects with a save location, debounced by 0.8 seconds; can be disabled in Preferences. Crash recovery remains separate.",
+    "rename": "Project menu renames the current project without making a copy.",
+    "imports": "Folder and batch imports are cancellable; completed imports are retained.",
+    "preferences": "Immediate appearance selection and separate waveform/proxy/recovery cache usage."
+  },
+  "limitations": [
+    "Tests ran locally on macOS; no iPad device or Simulator run was performed for these fixes.",
+    "AppKit controls were exercised in process; this is not a complete manual accessibility or visual audit.",
+    "Cache sizes are snapshots and can change as background jobs finish.",
+    "Historical audit.json and baseline probe results describe the pre-fix source and are retained unchanged."
+  ],
+  "ipad_checkout": "Not modified. Pre-existing working-tree status matches the pre-run record.",
+  "local_result_bundle": "/private/tmp/lae-parity-round2-fix/full.xcresult"
+}

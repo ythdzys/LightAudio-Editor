@@ -1,21 +1,31 @@
 import AppKit
 
 enum AutomationTarget {
+    case clipVolume(UUID)
     case clipPan(UUID)
     case trackVolume(UUID)
 
     var isPan: Bool { if case .clipPan = self { return true }; return false }
-    var title: String { L10n.tr(isPan ? "Clip Pan Automation" : "Track Volume Automation") }
+    var isClip: Bool { if case .trackVolume = self { return false }; return true }
+    var title: String {
+        switch self {
+        case .clipVolume: return L10n.tr("Clip Volume Automation")
+        case .clipPan: return L10n.tr("Clip Pan Automation")
+        case .trackVolume: return L10n.tr("Track Volume Automation")
+        }
+    }
     var range: ClosedRange<Double> { isPan ? -100...100 : -60...12 }
     func track(in project: Project) -> Track? {
         switch self {
-        case .clipPan(let id): return project.timeline.tracks.first { $0.clips.contains { $0.id == id } }
+        case .clipPan(let id), .clipVolume(let id): return project.timeline.tracks.first { $0.clips.contains { $0.id == id } }
         case .trackVolume(let id): return project.timeline.tracks.first { $0.id == id }
         }
     }
     func clip(in project: Project) -> Clip? {
-        guard case .clipPan(let id) = self else { return nil }
-        return track(in: project)?.clips.first { $0.id == id }
+        switch self {
+        case .clipPan(let id), .clipVolume(let id): return track(in: project)?.clips.first { $0.id == id }
+        case .trackVolume: return nil
+        }
     }
 }
 
@@ -120,9 +130,11 @@ final class AutomationEditorController: NSWindowController, NSTableViewDataSourc
             close(); return
         }
         let clip = target.clip(in: controller.project)
-        points = target.isPan
-            ? (clip?.panAutomationKeyframes.map { .init(id: $0.id, time: $0.time, value: $0.pan) } ?? [])
-            : track.volumeAutomationKeyframes.map { .init(id: $0.id, time: $0.time, value: $0.gainDB) }
+        switch target {
+        case .clipPan: points = clip?.panAutomationKeyframes.map { .init(id: $0.id, time: $0.time, value: $0.pan) } ?? []
+        case .clipVolume: points = clip?.volumeAutomationKeyframes.map { .init(id: $0.id, time: $0.time, value: $0.gainDB) } ?? []
+        case .trackVolume: points = track.volumeAutomationKeyframes.map { .init(id: $0.id, time: $0.time, value: $0.gainDB) }
+        }
         descriptionLabel.stringValue = track.name + " — " + L10n.tr(editable ? "Click to add a point; drag to move it." : "Unlock the track and finish media preparation to edit.")
         refreshing = true
         table.reloadData()
@@ -153,9 +165,12 @@ final class AutomationEditorController: NSWindowController, NSTableViewDataSourc
     }
     private func put(id: UUID?, time: Double, value: Double) {
         guard editable, time.isFinite, value.isFinite, time >= 0,
-              time <= (target.isPan ? duration : TimelineViewState.maximumTimelineTime),
+              time <= (target.isClip ? duration : TimelineViewState.maximumTimelineTime),
               target.range.contains(value) else { NSSound.beep(); return }
         switch target {
+        case .clipVolume(let clip):
+            if let id { controller.moveVolumeKeyframe(clipID: clip, keyframeID: id, time: time, gainDB: value) }
+            else { controller.addVolumeKeyframe(clipID: clip, time: time, gainDB: value) }
         case .clipPan(let clip):
             if let id { controller.movePanKeyframe(clipID: clip, keyframeID: id, time: time, pan: value) }
             else { controller.addPanKeyframe(clipID: clip, time: time, pan: value) }
@@ -174,6 +189,7 @@ final class AutomationEditorController: NSWindowController, NSTableViewDataSourc
     @objc private func deletePoint() {
         guard editable, let selectedID else { return }
         switch target {
+        case .clipVolume(let id): controller.deleteVolumeKeyframe(clipID: id, keyframeID: selectedID)
         case .clipPan(let id): controller.deletePanKeyframe(clipID: id, keyframeID: selectedID)
         case .trackVolume(let id): controller.deleteTrackVolumeKeyframe(trackID: id, keyframeID: selectedID)
         }
@@ -182,6 +198,7 @@ final class AutomationEditorController: NSWindowController, NSTableViewDataSourc
     @objc private func clearPoints() {
         guard editable else { return }
         switch target {
+        case .clipVolume(let id): controller.clearVolumeAutomation(clipID: id)
         case .clipPan(let id): controller.clearPanAutomation(clipID: id)
         case .trackVolume(let id): controller.clearTrackVolumeAutomation(trackID: id)
         }

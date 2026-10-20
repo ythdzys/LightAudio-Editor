@@ -73,6 +73,8 @@ final class MediaRelinkService {
             updated.proxyFailureReason = nil
             updated.sourceModificationTimestamp = resolver.sourceModificationTimestamp(for: replacementURL)
             updated.isMissing = false
+            updated.isVerifyingSource = false
+            updated.sourceVerificationFailure = nil
             updated.waveformCacheKey = nil
             let suffix = warnings.isEmpty
                 ? L10n.tr("Relinked.")

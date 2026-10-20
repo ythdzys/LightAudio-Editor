@@ -178,7 +178,7 @@ final class NativeAudioExportBackend: AudioExportBackend {
             while frame < totalFrames {
                 if cancellationToken.isCancelled { throw exportCancellationError() }
                 let count = AVAudioFrameCount(min(Int64(chunkFrames), totalFrames - frame))
-                guard let mixBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count) else { break }
+                guard let mixBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count) else { throw CocoaError(.fileWriteUnknown) }
                 mixBuffer.frameLength = count
                 clear(buffer: mixBuffer)
 
@@ -190,6 +190,8 @@ final class NativeAudioExportBackend: AudioExportBackend {
                     let clipEnd = clip.timelineStart + clip.duration
                     if clipEnd <= chunkStart || clipStart >= chunkEnd { continue }
                     try mix(clip: clip, track: track, project: project, asset: asset, into: mixBuffer, chunkStart: chunkStart, origin: range.start, chunkFrame: frame, sampleRate: sampleRate, sourceCache: sourceCache)
+                    let endFrame = Int64(AudioFrameMath.ceiling((clipEnd - range.start) * sampleRate))
+                    if endFrame <= frame + Int64(count) { sourceCache.sources.removeValue(forKey: clip.id) }
                 }
 
                 applyMasterGain(project.mixState.masterVolumeDB, to: mixBuffer)
@@ -199,7 +201,8 @@ final class NativeAudioExportBackend: AudioExportBackend {
                 clippingDetected = clippingDetected || peakReport.clipped
                 try output.write(from: mixBuffer)
                 frame += AVAudioFramePosition(count)
-                DispatchQueue.main.async { progress(Double(frame) / Double(max(totalFrames, 1))) }
+                let fraction = Double(frame) / Double(max(totalFrames, 1))
+                DispatchQueue.main.async { progress(fraction) }
             }
         }
         if cancellationToken.isCancelled { throw exportCancellationError() }

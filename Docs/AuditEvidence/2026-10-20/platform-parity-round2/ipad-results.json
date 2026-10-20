@@ -1,0 +1,30 @@
+{
+  "exportDecoderLifetime" : {
+    "baselineDescriptors" : 4,
+    "clips" : 160,
+    "error" : "none",
+    "growth" : 2,
+    "peakDescriptors" : 6
+  },
+  "nonfinitePlayheadAccepted" : false,
+  "overflowOutputSample" : 1,
+  "pendingImportSharedController" : {
+    "existingSourceMissingAfterVerification" : false,
+    "outcome" : "Missing media must be relinked before importing new media.",
+    "pending" : true
+  },
+  "relinkPendingState" : {
+    "accepted" : true,
+    "isVerifyingSource" : false
+  },
+  "timelineBounds" : {
+    "canSaveAfterPlacement" : true,
+    "duration" : 0,
+    "placementAccepted" : false
+  },
+  "track65Placement" : {
+    "clamped" : false,
+    "target" : "A65",
+    "trackCount" : 65
+  }
+}

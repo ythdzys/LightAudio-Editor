@@ -623,5 +623,21 @@
   "Enter a project name.": "请输入项目名称。",
   "Enter a target between -60 and 0 dBFS.": "请输入 -60 至 0 dBFS 之间的目标值。",
   "Verifying source...": "正在验证源文件…",
-  "Move Automation Point": "移动自动化控制点"
+  "Move Automation Point": "移动自动化控制点",
+  "Edit Clip Volume Automation...": "编辑片段音量自动化...",
+  "Clip Volume Automation": "片段音量自动化",
+  "Rename Project...": "重命名项目...",
+  "Automatically save changes to saved projects": "自动保存已保存项目的更改",
+  "Appearance:": "外观：",
+  "Light": "浅色",
+  "Dark": "深色",
+  "Refresh Cache Usage": "刷新缓存用量",
+  "Waveforms: %@": "波形：%@",
+  "Video audio proxies: %@": "视频音频代理：%@",
+  "Recovery snapshots: %@": "恢复快照：%@",
+  "Total cache: %@": "缓存总计：%@",
+  "Importing media %d of %d": "正在导入媒体 %d / %d",
+  "Import cancelled. Already imported media was kept.": "导入已取消，已导入的媒体会保留。",
+  "Imported %d; duplicates %d; skipped %d; failed %d": "已导入 %d；重复 %d；跳过 %d；失败 %d",
+  "The media extends beyond the timeline limit.": "媒体超出了时间线长度限制。"
 }

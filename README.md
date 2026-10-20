@@ -77,7 +77,7 @@ Both architectures ship in one Universal app. Apple silicon begins with macOS Bi
 - Snapping to grid, playhead, markers, and clip edges
 - In/Out points, markers, loop playback, follow-playhead, zoom to fit, and smooth trackpad zoom
 - Linear, equal-power, ease-in, and ease-out fades plus explicit crossfades; splits retain their original curves
-- Clip volume automation envelopes, plus graph and numeric editors for clip pan and track volume automation
+- Clip volume automation envelopes, plus graph and numeric editors for clip volume, clip pan, and track volume automation
 - Undo/redo, dirty-state indicators, save prompts, crash recovery, and context menus
 
 ### Playback and Mixing
@@ -96,7 +96,7 @@ Both architectures ship in one Universal app. Apple silicon begins with macOS Bi
 
 Export supports the entire project, the current In/Out range, or a custom numeric start/end range, mono or stereo output, selectable sample rates, compressed bitrates, progress, cancellation, and clipping detection. MP3 uses LAME-compatible sample rates up to 48 kHz. Exported audio includes trims, fades, crossfades, automation, clip/track mix controls, mute/solo state, and master gain.
 
-To edit clip pan automation, use **Clip Pan Automation** in the inspector or the clip context menu. For track volume automation, right-click the track header and choose **Track Volume Automation**. Click the graph to add points, drag to move them, or use the point list and numeric fields. Edits support Undo/Redo and respect locked tracks.
+To edit clip volume automation, use **Edit Clip Volume Automation** in the inspector or the clip context menu. For clip pan automation, use **Clip Pan Automation** in the inspector or the clip context menu. For track volume automation, right-click the track header and choose **Track Volume Automation**. Click the graph to add points, drag to move them, or use the point list and numeric fields. Edits support Undo/Redo and respect locked tracks.
 
 ## Quick Start
 
@@ -112,11 +112,13 @@ To edit clip pan automation, use **Clip Pan Automation** in the inspector or the
 `.liau` projects are readable JSON documents containing timeline structure, media references, mix settings, markers, view state, and automation. They do not embed source media, waveform arrays, or proxy audio.
 
 - Relative media paths are saved when possible.
+- **Project > Rename Project** changes the current project name with Undo support.
+- Saved projects automatically save edits in the background after 0.8 seconds of inactivity. Disable **Automatically save changes to saved projects** in Preferences for manual saving. New projects still need an initial Save location; crash recovery remains separate. Saves are serialized and preserve edits made while a write is in progress.
 - **File > Save As** creates and opens an independent project folder containing all library media, with a new project identity and fresh Undo history. Ordinary **Save** keeps the current document and references.
 - Project formats 1–3 are supported on macOS and iPadOS. Files use the oldest required version: 2 for partial fades, 3 for partial crossfades, and 1 otherwise.
 - **Decide Later** retains crash recovery for **Project > Recover Interrupted Project**. Failed restores keep the snapshot for retry; cache clearing is blocked while recovery is pending.
 - M4A edit lists, gaps, retiming, and multiple audio tracks use the same container-aware preparation as video audio. Source verification and waveform/cache reads run in the background; waveform and proxy preparation share a two-job budget.
-- Importing byte-identical media from another path reuses its existing library entry.
+- Importing byte-identical media from another path reuses its existing library entry. Folder and batch imports process metadata sequentially, wait for pending source verification, and support cancellation while keeping already imported files.
 - **File > Collect Project Media** creates a portable project copy with a `Media/` folder, including unused library media.
 - **Audio only for video files** is enabled by default when collecting a project. It replaces videos in the exported copy with lossless float PCM `.caf` audio, preserving native sample rate, channels, timing, and edits. Savings depend on the source; disable it to include original videos.
 - Collection supports cancellation and removes incomplete output on failure. Move the entire collected folder to keep relative media links working.
@@ -136,6 +138,8 @@ Generated caches are stored under:
 ```
 
 **LightAudio Editor > Preferences > Clear App Cache** removes generated waveforms, proxy audio, and recovery snapshots. It does not remove `.liau` projects or original media.
+
+Preferences also show separate waveform, video proxy, and recovery cache sizes, with a refresh control. Choose **System Default**, **Light**, or **Dark** appearance; changes apply immediately.
 
 The interface follows the macOS language by default. Choose **English** or **Simplified Chinese** under **LightAudio Editor > Preferences > Language** to override it; the selected language is applied after restarting the app.
 

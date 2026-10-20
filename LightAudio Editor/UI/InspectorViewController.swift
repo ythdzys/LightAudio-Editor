@@ -11,6 +11,7 @@ final class InspectorViewController: NSViewController {
     var onColorChanged: ((ClipColorLabel) -> Void)?
     var onAddVolumeKeyframe: (() -> Void)?
     var onClearVolumeAutomation: (() -> Void)?
+    var onVolumeAutomation: (() -> Void)?
     var onPanAutomation: (() -> Void)?
     var onNormalizeClip: (() -> Void)?
     var onBeginContinuousEdit: ((String) -> Void)?
@@ -38,6 +39,7 @@ final class InspectorViewController: NSViewController {
     private let automationSummaryLabel = NSTextField(labelWithString: L10n.tr("Volume keyframes: 0"))
     private let addKeyframeButton = NSButton(title: L10n.tr("Add keyframe"), target: nil, action: nil)
     private let clearAutomationButton = NSButton(title: L10n.tr("Clear automation"), target: nil, action: nil)
+    private let volumeAutomationButton = NSButton(title: L10n.tr("Edit Clip Volume Automation..."), target: nil, action: nil)
     private let panAutomationButton = NSButton(title: L10n.tr("Clip Pan Automation..."), target: nil, action: nil)
     private let normalizeButton = NSButton(title: L10n.tr("Normalize Clip..."), target: nil, action: nil)
     private let gainSlider = ContinuousSlider(value: 0, minValue: -60, maxValue: 12, target: nil, action: nil)
@@ -184,7 +186,10 @@ final class InspectorViewController: NSViewController {
         fadesSection.contentStack.addArrangedSubview(fadeOutCurveRow)
         automationSection.contentStack.addArrangedSubview(automationSummaryLabel)
         automationSection.contentStack.addArrangedSubview(automationButtons)
+        volumeAutomationButton.target = self
+        volumeAutomationButton.action = #selector(editVolumeAutomation)
         panAutomationButton.target = self; panAutomationButton.action = #selector(editPanAutomation)
+        automationSection.contentStack.addArrangedSubview(volumeAutomationButton)
         automationSection.contentStack.addArrangedSubview(panAutomationButton)
         processingSection.contentStack.addArrangedSubview(normalizeButton)
     }
@@ -322,7 +327,7 @@ final class InspectorViewController: NSViewController {
         field.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         field.target = self
         field.action = action
-        field.formatter = DecimalNumberFormatter()
+        field.formatter = nil
     }
 
     func update(project: Project, selectedClipIDs: Set<UUID>) {
@@ -383,8 +388,8 @@ final class InspectorViewController: NSViewController {
                 updateField(panField, value: panSlider.doubleValue)
                 updateField(fadeInField, value: clip.fadeIn.duration)
                 updateField(fadeOutField, value: clip.fadeOut.duration)
-                setControlsEnabled(!editingIsBlocked)
-                setAutomationButtonsEnabled(!editingIsBlocked)
+                setControlsEnabled(!editingIsBlocked && !track.isLocked)
+                setAutomationButtonsEnabled(!editingIsBlocked && !track.isLocked)
                 isUpdatingControls = false
                 markSectionsForRebuild()
                 return
@@ -459,6 +464,8 @@ final class InspectorViewController: NSViewController {
         onAddVolumeKeyframe?()
     }
 
+    @objc private func editVolumeAutomation() { onVolumeAutomation?() }
+
     @objc private func editPanAutomation() { onPanAutomation?() }
 
     @objc private func clearVolumeAutomation() {
@@ -470,34 +477,55 @@ final class InspectorViewController: NSViewController {
     }
 
     @objc private func gainFieldChanged() {
-        let value = min(max(-60, gainField.doubleValue), 12)
+        guard let value = NumericInput.number(gainField.stringValue), (-60...12).contains(value) else {
+            gainField.textColor = .systemRed
+            NSSound.beep()
+            return
+        }
+        gainField.textColor = .labelColor
         gainSlider.doubleValue = value
         updateField(gainField, value: value)
         onGainChanged?(MixMath.linearGain(forDB: value))
     }
 
     @objc private func panFieldChanged() {
-        let value = min(max(-100, panField.doubleValue), 100)
+        guard let value = NumericInput.number(panField.stringValue), (-100...100).contains(value) else {
+            panField.textColor = .systemRed
+            NSSound.beep()
+            return
+        }
+        panField.textColor = .labelColor
         panSlider.doubleValue = value
         updateField(panField, value: value)
         onPanChanged?(value / 100)
     }
 
     @objc private func fadeInFieldChanged() {
-        let value = min(max(0, fadeInField.doubleValue), fadeInSlider.maxValue)
+        guard let value = NumericInput.number(fadeInField.stringValue), (0...fadeInSlider.maxValue).contains(value) else {
+            fadeInField.textColor = .systemRed
+            NSSound.beep()
+            return
+        }
+        fadeInField.textColor = .labelColor
         fadeInSlider.doubleValue = value
         updateField(fadeInField, value: value)
         onFadeInChanged?(value)
     }
 
     @objc private func fadeOutFieldChanged() {
-        let value = min(max(0, fadeOutField.doubleValue), fadeOutSlider.maxValue)
+        guard let value = NumericInput.number(fadeOutField.stringValue), (0...fadeOutSlider.maxValue).contains(value) else {
+            fadeOutField.textColor = .systemRed
+            NSSound.beep()
+            return
+        }
+        fadeOutField.textColor = .labelColor
         fadeOutSlider.doubleValue = value
         updateField(fadeOutField, value: value)
         onFadeOutChanged?(value)
     }
 
     private func updateField(_ field: NSTextField, value: Double) {
+        field.textColor = .labelColor
         field.stringValue = String(format: "%.2f", value)
     }
 
@@ -506,7 +534,7 @@ final class InspectorViewController: NSViewController {
     }
 
     private func setAutomationButtonsEnabled(_ enabled: Bool) {
-        [addKeyframeButton, clearAutomationButton, normalizeButton, panAutomationButton].forEach { $0.isEnabled = enabled }
+        [addKeyframeButton, clearAutomationButton, normalizeButton, volumeAutomationButton, panAutomationButton].forEach { $0.isEnabled = enabled }
     }
 }
 
