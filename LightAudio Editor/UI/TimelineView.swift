@@ -80,7 +80,7 @@ enum WaveformRenderMetrics {
     }
 }
 
-final class TimelineView: NSView {
+final class TimelineView: AppearanceAwareView {
     typealias TrimEdge = TimelineTrimEdge
 
     var project: Project = .empty() {
@@ -456,7 +456,7 @@ final class TimelineView: NSView {
         NSBezierPath(rect: renderRect).addClip()
         defer { NSGraphicsContext.current?.restoreGraphicsState() }
 
-        NSColor(calibratedWhite: 0.11, alpha: 1).setFill()
+        EditorColors.timelineBackground.setFill()
         renderRect.fill()
         drawRuler(in: renderRect)
         drawTracks(in: renderRect)
@@ -480,16 +480,16 @@ final class TimelineView: NSView {
 
     private func drawRuler(in renderRect: NSRect) {
         let rulerRect = renderRect.intersection(NSRect(x: 0, y: 0, width: bounds.width, height: rulerHeight))
-        NSColor(calibratedWhite: 0.16, alpha: 1).setFill()
+        EditorColors.rulerBackground.setFill()
         rulerRect.fill()
         let context = NSStringDrawingContext()
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular), .foregroundColor: NSColor.lightGray]
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular), .foregroundColor: EditorColors.rulerText]
         let step = niceStep()
         let firstX = max(stickyHeaderMaxX, renderRect.minX)
         var time = max(0, floor(time(forX: firstX) / step) * step)
         while x(for: time) <= renderRect.maxX + 1 {
             let x = self.x(for: time)
-            NSColor.darkGray.setStroke()
+            EditorColors.gridLine.setStroke()
             NSBezierPath.strokeLine(
                 from: NSPoint(x: x, y: max(rulerHeight - 8, renderRect.minY)),
                 to: NSPoint(x: x, y: renderRect.maxY)
@@ -606,9 +606,9 @@ final class TimelineView: NSView {
             let laneHeight = height(for: track)
             let laneRect = NSRect(x: 0, y: y, width: bounds.width, height: laneHeight)
             guard laneRect.intersects(bodyRenderRect) else { continue }
-            NSColor(calibratedWhite: trackIndex % 2 == 0 ? 0.135 : 0.12, alpha: 1).setFill()
+            (trackIndex % 2 == 0 ? EditorColors.trackBackground : EditorColors.alternateTrackBackground).setFill()
             laneRect.intersection(bodyRenderRect).fill()
-            NSColor(calibratedWhite: 0.24, alpha: 1).setStroke()
+            EditorColors.trackSeparator.setStroke()
             if y >= bodyRenderRect.minY - 1 && y <= bodyRenderRect.maxY + 1 {
                 NSBezierPath.strokeLine(from: NSPoint(x: bodyRenderRect.minX, y: y), to: NSPoint(x: bodyRenderRect.maxX, y: y))
             }
@@ -653,9 +653,9 @@ final class TimelineView: NSView {
 
     private func drawTrackHeader(_ track: Track, y: CGFloat) {
         let laneHeight = height(for: track)
-        NSColor(calibratedWhite: 0.155, alpha: 1).setFill()
+        EditorColors.trackHeader.setFill()
         NSRect(x: stickyHeaderX, y: y, width: trackHeaderWidth, height: laneHeight).fill()
-        NSColor(calibratedWhite: 0.26, alpha: 1).setStroke()
+        EditorColors.headerDivider.setStroke()
         NSBezierPath.strokeLine(from: NSPoint(x: stickyHeaderMaxX, y: y), to: NSPoint(x: stickyHeaderMaxX, y: y + laneHeight))
 
         let nameAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.labelColor]
@@ -675,11 +675,11 @@ final class TimelineView: NSView {
     private func drawStickyHeaderChrome(in renderRect: NSRect) {
         let headerRect = NSRect(x: stickyHeaderX, y: renderRect.minY, width: trackHeaderWidth, height: renderRect.height)
         guard headerRect.intersects(renderRect) else { return }
-        NSColor(calibratedWhite: 0.145, alpha: 1).setFill()
+        EditorColors.headerBackground.setFill()
         headerRect.intersection(renderRect).fill()
         let headerRulerRect = headerRect.intersection(NSRect(x: stickyHeaderX, y: 0, width: trackHeaderWidth, height: rulerHeight))
         if !headerRulerRect.isEmpty {
-            NSColor(calibratedWhite: 0.13, alpha: 1).setFill()
+            EditorColors.headerRuler.setFill()
             headerRulerRect.fill()
         }
 
@@ -692,7 +692,7 @@ final class TimelineView: NSView {
         }
 
         drawStickyDropTargetIfNeeded(in: renderRect)
-        NSColor(calibratedWhite: 0.26, alpha: 1).setStroke()
+        EditorColors.headerDivider.setStroke()
         NSBezierPath.strokeLine(
             from: NSPoint(x: stickyHeaderMaxX, y: renderRect.minY),
             to: NSPoint(x: stickyHeaderMaxX, y: renderRect.maxY)
@@ -733,7 +733,7 @@ final class TimelineView: NSView {
     private func drawMiniSlider(label: String, value: Double, text: String, rect: NSRect) {
         let labelAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor]
         (label as NSString).draw(in: NSRect(x: rect.minX - 16, y: rect.minY - 4, width: 12, height: 12), withAttributes: labelAttrs)
-        NSColor(calibratedWhite: 0.26, alpha: 1).setFill()
+        EditorColors.sliderTrack.setFill()
         NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
         NSColor.systemTeal.withAlphaComponent(0.75).setFill()
         let knobX = rect.minX + CGFloat(min(1, max(0, value))) * rect.width
@@ -743,7 +743,7 @@ final class TimelineView: NSView {
     }
 
     private func drawMeter(level: Double, rect: NSRect) {
-        NSColor(calibratedWhite: 0.22, alpha: 1).setFill()
+        EditorColors.meterBackground.setFill()
         NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
         let clamped = min(1.2, max(0, level))
         let width = rect.width * CGFloat(min(1, clamped))
@@ -767,37 +767,18 @@ final class TimelineView: NSView {
     }
 
     private func drawTrackButton(title: String, active: Bool, rect: NSRect) {
-        (active ? NSColor.systemYellow : NSColor(calibratedWhite: 0.24, alpha: 1)).setFill()
+        (active ? NSColor.systemYellow : EditorColors.trackButton).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .bold),
-            .foregroundColor: active ? NSColor.black : NSColor.white
+            .foregroundColor: active ? NSColor.black : EditorColors.trackButtonText
         ]
         let size = (title as NSString).size(withAttributes: attrs)
         (title as NSString).draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attrs)
     }
 
-    private func color(for label: ClipColorLabel) -> NSColor {
-        switch label {
-        case .default:
-            return NSColor(calibratedRed: 0.18, green: 0.36, blue: 0.58, alpha: 1)
-        case .blue:
-            return NSColor.systemBlue.withAlphaComponent(0.82)
-        case .green:
-            return NSColor.systemGreen.withAlphaComponent(0.74)
-        case .purple:
-            return NSColor.systemPurple.withAlphaComponent(0.78)
-        case .orange:
-            return NSColor.systemOrange.withAlphaComponent(0.82)
-        case .red:
-            return NSColor.systemRed.withAlphaComponent(0.78)
-        case .gray:
-            return NSColor.systemGray.withAlphaComponent(0.82)
-        }
-    }
-
     private func drawCollapseButton(collapsed: Bool, rect: NSRect) {
-        NSColor(calibratedWhite: 0.24, alpha: 1).setFill()
+        EditorColors.trackButton.setFill()
         NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
         let path = NSBezierPath()
         if collapsed {
@@ -833,9 +814,9 @@ final class TimelineView: NSView {
         let selected = selectedClipIDs.contains(clip.id) || clip.id == selectedClipID
         let compact = rect.height < 36
 
-        (offline ? NSColor(calibratedRed: 0.55, green: 0.13, blue: 0.15, alpha: 1) : color(for: clip.colorLabel)).setFill()
+        (offline ? EditorColors.offlineClip : EditorColors.clipBackground(for: clip.colorLabel)).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).fill()
-        (selected ? NSColor.systemYellow : NSColor(calibratedWhite: 0.55, alpha: 1)).setStroke()
+        (selected ? EditorColors.selectionAccent : NSColor(calibratedWhite: 0.55, alpha: 1)).setStroke()
         let outline = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
         outline.lineWidth = selected ? 2 : 1
         outline.stroke()
@@ -858,12 +839,12 @@ final class TimelineView: NSView {
         let title = offline
             ? L10n.format("%@ - MISSING", clip.customName ?? asset?.displayName ?? L10n.tr("Missing"))
             : (clip.customName ?? asset?.displayName ?? L10n.tr("Clip"))
-        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: compact ? 10 : 12, weight: .medium), .foregroundColor: NSColor.white]
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: compact ? 10 : 12, weight: .medium), .foregroundColor: EditorColors.clipText]
         (title as NSString).draw(in: rect.insetBy(dx: 8, dy: 5), withAttributes: attrs)
 
         if !compact {
             let detail = L10n.format("clip %.0f dB  pan %+.0f", MixMath.db(forLinearGain: clip.gain), clip.pan * 100)
-            let detailAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor(calibratedWhite: 1, alpha: 0.75)]
+            let detailAttrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: EditorColors.clipDetail]
             (detail as NSString).draw(in: NSRect(x: rect.minX + 8, y: rect.maxY - 18, width: rect.width - 16, height: 14), withAttributes: detailAttrs)
         }
     }
@@ -880,7 +861,7 @@ final class TimelineView: NSView {
                 fade: clip.fadeIn,
                 rising: true
             )
-            NSColor.white.withAlphaComponent(0.65).setStroke()
+            EditorColors.clipText.withAlphaComponent(0.65).setStroke()
             path.lineWidth = 2
             path.stroke()
         }
@@ -894,7 +875,7 @@ final class TimelineView: NSView {
                 fade: clip.fadeOut,
                 rising: false
             )
-            NSColor.white.withAlphaComponent(0.65).setStroke()
+            EditorColors.clipText.withAlphaComponent(0.65).setStroke()
             path.lineWidth = 2
             path.stroke()
         }
@@ -906,7 +887,7 @@ final class TimelineView: NSView {
         let hover = hoverTrimEdge?.clipID == clip.id ? hoverTrimEdge : nil
         guard let edge = preview?.edge ?? hover?.edge else { return }
 
-        let accent: NSColor = preview?.isValid == false ? .systemRed : .systemYellow
+        let accent: NSColor = preview?.isValid == false ? .systemRed : EditorColors.selectionAccent
         let edgeX = edge == .left ? rect.minX : rect.maxX
         let edgeLine = NSBezierPath()
         edgeLine.move(to: NSPoint(x: edgeX, y: rect.minY + 4))
@@ -1062,7 +1043,7 @@ final class TimelineView: NSView {
                     outPath.line(to: NSPoint(x: x, y: outY))
                 }
             }
-            NSColor.white.withAlphaComponent(0.72).setStroke()
+            EditorColors.clipText.withAlphaComponent(0.72).setStroke()
             inPath.lineWidth = 1.3
             outPath.lineWidth = 1.3
             inPath.stroke()
@@ -1085,7 +1066,7 @@ final class TimelineView: NSView {
                 path.line(to: point)
             }
         }
-        NSColor.white.withAlphaComponent(clip.volumeAutomationKeyframes.isEmpty ? 0.28 : 0.78).setStroke()
+        EditorColors.clipText.withAlphaComponent(clip.volumeAutomationKeyframes.isEmpty ? 0.28 : 0.78).setStroke()
         path.lineWidth = clip.volumeAutomationKeyframes.isEmpty ? 1 : 1.5
         path.stroke()
 
@@ -1093,7 +1074,7 @@ final class TimelineView: NSView {
             let point = volumeEnvelopePoint(clip: clip, time: keyframe.time, gainDB: keyframe.gainDB, in: envelopeRect)
             let keyRect = NSRect(x: point.x - 4, y: point.y - 4, width: 8, height: 8)
             let isSelected = selectedVolumeKeyframe == VolumeKeyframeSelection(clipID: clip.id, keyframeID: keyframe.id)
-            (isSelected ? NSColor.systemYellow : NSColor.white).setFill()
+            (isSelected ? EditorColors.selectionAccent : EditorColors.clipText).setFill()
             NSBezierPath(ovalIn: keyRect).fill()
             NSColor.black.withAlphaComponent(0.65).setStroke()
             NSBezierPath(ovalIn: keyRect.insetBy(dx: 0.5, dy: 0.5)).stroke()
@@ -1190,7 +1171,7 @@ final class TimelineView: NSView {
             path.line(to: NSPoint(x: x, y: bottom))
         }
 
-        NSColor(calibratedWhite: 0.95, alpha: 0.72).setStroke()
+        EditorColors.waveform.setStroke()
         path.lineWidth = 1
         path.stroke()
         NSGraphicsContext.current?.shouldAntialias = previousAntialias ?? true
@@ -1231,9 +1212,9 @@ final class TimelineView: NSView {
         }
         switch style {
         case .generating:
-            NSColor(calibratedWhite: 0.95, alpha: 0.42).setStroke()
+            EditorColors.pendingWaveform.setStroke()
         case .offline:
-            NSColor(calibratedWhite: 0.85, alpha: 0.35).setStroke()
+            EditorColors.offlineWaveform.setStroke()
         case .failed:
             NSColor.systemOrange.withAlphaComponent(0.65).setStroke()
         }
@@ -1255,7 +1236,7 @@ final class TimelineView: NSView {
     private func drawSnapGuide(in renderRect: NSRect) {
         guard let snapGuideX = snapGuideX else { return }
         guard snapGuideX >= renderRect.minX - 1 && snapGuideX <= renderRect.maxX + 1 else { return }
-        NSColor.systemYellow.withAlphaComponent(0.45).setStroke()
+        EditorColors.snapGuide.setStroke()
         let path = NSBezierPath()
         path.move(to: NSPoint(x: snapGuideX, y: max(rulerHeight, renderRect.minY)))
         path.line(to: NSPoint(x: snapGuideX, y: renderRect.maxY))

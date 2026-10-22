@@ -1,6 +1,6 @@
 # LightAudio Editor Beta Release Guide
 
-LightAudio Editor Beta 4 uses bundle identifier `com.ythdzys.LightAudioEditor`, marketing version `0.1.1`, and build number `4`.
+LightAudio Editor Beta 5 uses bundle identifier `com.ythdzys.LightAudioEditor`, marketing version `0.2.0`, and build number `5`.
 
 The release is one Universal app containing both `x86_64` and `arm64`. Its Intel slice supports macOS Catalina 10.15 and later. Its Apple silicon slice supports macOS Big Sur 11.0 and later, which is the first macOS release available for Apple silicon Macs.
 
@@ -78,11 +78,11 @@ NOTARYTOOL_PROFILE="LightAudioEditor-notary" \
 
 The script submits with `notarytool`, waits for acceptance, staples and validates the ticket, runs a Gatekeeper assessment, and creates the final tester ZIP plus a SHA-256 checksum.
 
-Attach both the final `LightAudio-Editor-0.1.1-beta-4-macOS.zip` and the generated `LightAudio-Editor-0.1.1-Bundled-Encoder-Source.zip` to the GitHub prerelease. The second asset provides corresponding source for the LGPL FFmpeg/LAME helper distributed inside the app.
+Attach both the final `LightAudio-Editor-0.2.0-beta-5-macOS.zip` and the generated `LightAudio-Editor-0.2.0-Bundled-Encoder-Source.zip` to the GitHub prerelease. The second asset provides corresponding source for the LGPL FFmpeg/LAME helper distributed inside the app.
 
 ## Versioning Future Builds
 
-- Keep `MARKETING_VERSION` at `0.1.1` for Beta 4 fixes.
-- Increment `CURRENT_PROJECT_VERSION` for every distributed build.
+- Keep `MARKETING_VERSION` at `0.2.0` for Beta 5 fixes.
+- Increment `CURRENT_PROJECT_VERSION` for every distributed build. Beta numbering continues across marketing-version changes, so version 0.2.0 begins with Beta 5.
 - Change the marketing version only for a new user-facing beta or release.
-- Tag the Beta 4 source as `v0.1.1-beta.4` after tests and packaging checks pass. Replace the ad-hoc asset with a signed and notarized build when Developer ID credentials become available.
+- Tag the Beta 5 source as `v0.2.0-beta.5` after tests and packaging checks pass. Replace the ad-hoc asset with a signed and notarized build when Developer ID credentials become available.

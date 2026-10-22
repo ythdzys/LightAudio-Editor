@@ -772,12 +772,17 @@ extension PlatformParityTests {
         let preferences = PreferencesWindowController(cacheService: service) { _ in XCTFail("Measurement must not clear caches") }
         defer { preferences.close() }
         let content = try XCTUnwrap(preferences.window?.contentView); content.layoutSubtreeIfNeeded()
-        let popup = try XCTUnwrap(descendants(content).compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles.contains(L10n.tr("Dark")) })
+        let appearanceControl = try XCTUnwrap(descendants(content).compactMap { $0 as? NSSegmentedControl }
+            .first { $0.identifier?.rawValue == "editorAppearance" })
         for (index, expected) in [(1, NSAppearance.Name.aqua), (2, .darkAqua)] {
-            popup.selectItem(at: index); popup.sendAction(popup.action, to: popup.target)
+            appearanceControl.selectedSegment = index
+            appearanceControl.sendAction(appearanceControl.action, to: appearanceControl.target)
             XCTAssertEqual(NSApp.appearance?.name, expected)
+            XCTAssertEqual(EditorAppearance.preferred, EditorAppearance.allCases[index])
         }
-        popup.selectItem(at: 0); popup.sendAction(popup.action, to: popup.target)
+        appearanceControl.selectedSegment = 0
+        appearanceControl.sendAction(appearanceControl.action, to: appearanceControl.target)
+        XCTAssertEqual(EditorAppearance.preferred, .system)
         XCTAssertNil(NSApp.appearance); XCTAssertTrue(FileManager.default.fileExists(atPath: external.path))
     }
 

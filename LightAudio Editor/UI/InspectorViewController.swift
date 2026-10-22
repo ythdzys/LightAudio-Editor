@@ -538,7 +538,7 @@ final class InspectorViewController: NSViewController {
     }
 }
 
-private final class InspectorSectionView: NSView {
+private final class InspectorSectionView: EditorSurfaceView {
     let contentStack = NSStackView()
 
     private let titleLabel: NSTextField
@@ -546,11 +546,10 @@ private final class InspectorSectionView: NSView {
     init(title: String) {
         titleLabel = NSTextField(labelWithString: title)
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = 7
-        layer?.backgroundColor = NSColor(calibratedWhite: 0.18, alpha: 0.86).cgColor
-        layer?.borderWidth = 1
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.07).cgColor
+        cornerRadius = 7
+        backgroundColor = EditorColors.inspectorBackground
+        borderWidth = 1
+        borderColor = EditorColors.inspectorBorder
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)

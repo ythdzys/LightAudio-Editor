@@ -1,26 +1,12 @@
 import AppKit
 
-enum EditorAppearance: String, CaseIterable {
-    case system, light, dark
-
-    static var preferred: Self {
-        get { Self(rawValue: UserDefaults.standard.string(forKey: "EditorAppearance") ?? "") ?? .system }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "EditorAppearance") }
-    }
-
-    static func apply() {
-        switch preferred {
-        case .system: NSApp.appearance = nil
-        case .light: NSApp.appearance = NSAppearance(named: .aqua)
-        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
-        }
-    }
-}
-
 final class PreferencesWindowController: NSWindowController {
     var onAutosavePreferenceChanged: (() -> Void)?
     private let cacheService: ApplicationCacheService
-    private let appearancePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let appearanceControl = NSSegmentedControl(
+        labels: [L10n.tr("System Default"), L10n.tr("Light"), L10n.tr("Dark")],
+        trackingMode: .selectOne, target: nil, action: nil
+    )
     private let autosaveCheckbox = NSButton(checkboxWithTitle: L10n.tr("Automatically save changes to saved projects"), target: nil, action: nil)
     private let cacheUsageLabel = NSTextField(wrappingLabelWithString: "")
     private let refreshCacheButton = NSButton(title: L10n.tr("Refresh Cache Usage"), target: nil, action: nil)
@@ -66,10 +52,11 @@ final class PreferencesWindowController: NSWindowController {
         clearCacheButton.action = #selector(clearApplicationCache)
         cacheStatusLabel.textColor = .secondaryLabelColor
 
-        appearancePopup.addItems(withTitles: [L10n.tr("System Default"), L10n.tr("Light"), L10n.tr("Dark")])
-        appearancePopup.selectItem(at: EditorAppearance.allCases.firstIndex(of: .preferred) ?? 0)
-        appearancePopup.target = self
-        appearancePopup.action = #selector(appearanceChanged)
+        appearanceControl.identifier = NSUserInterfaceItemIdentifier("editorAppearance")
+        appearanceControl.setAccessibilityLabel(L10n.tr("Appearance:"))
+        appearanceControl.selectedSegment = EditorAppearance.allCases.firstIndex(of: .preferred) ?? 0
+        appearanceControl.target = self
+        appearanceControl.action = #selector(appearanceChanged)
         autosaveCheckbox.state = EditorPreferences.automaticallySaveChanges ? .on : .off
         autosaveCheckbox.target = self
         autosaveCheckbox.action = #selector(autosaveChanged)
@@ -78,7 +65,7 @@ final class PreferencesWindowController: NSWindowController {
         cacheUsageLabel.textColor = .secondaryLabelColor
 
         let languageRow = NSStackView(views: [languageLabel, languagePopup])
-        let appearanceRow = NSStackView(views: [NSTextField(labelWithString: L10n.tr("Appearance:")), appearancePopup])
+        let appearanceRow = NSStackView(views: [NSTextField(labelWithString: L10n.tr("Appearance:")), appearanceControl])
         let cacheRow = NSStackView(views: [clearCacheButton, refreshCacheButton])
         let stack = NSStackView(views: [languageRow, languageHintLabel, appearanceRow,
             autoCrossfadeCheckbox, autosaveCheckbox, statusLabel, cacheUsageLabel, cacheRow, cacheStatusLabel])
@@ -98,12 +85,13 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     override func showWindow(_ sender: Any?) {
+        appearanceControl.selectedSegment = EditorAppearance.allCases.firstIndex(of: .preferred) ?? 0
         super.showWindow(sender)
         refreshCacheUsage()
     }
 
     @objc private func appearanceChanged() {
-        let index = appearancePopup.indexOfSelectedItem
+        let index = appearanceControl.selectedSegment
         guard EditorAppearance.allCases.indices.contains(index) else { return }
         EditorAppearance.preferred = EditorAppearance.allCases[index]
         EditorAppearance.apply()

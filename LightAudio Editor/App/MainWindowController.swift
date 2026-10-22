@@ -376,10 +376,8 @@ final class MainWindowController: NSWindowController, ProjectControllerDelegate,
 
         let root = NSView()
         split.translatesAutoresizingMaskIntoConstraints = false
-        let statusBar = NSView()
+        let statusBar = EditorSurfaceView()
         statusBar.translatesAutoresizingMaskIntoConstraints = false
-        statusBar.wantsLayer = true
-        statusBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusBar.addSubview(statusLabel)
         let masterLabel = NSTextField(labelWithString: L10n.tr("Master"))
@@ -1987,7 +1985,7 @@ final class RoundToolbarButton: NSButton {
     }
 }
 
-final class LevelMeterView: NSView {
+final class LevelMeterView: AppearanceAwareView {
     var level: Double = 0 {
         didSet { needsDisplay = true }
     }
@@ -1999,7 +1997,7 @@ final class LevelMeterView: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.22, alpha: 1).setFill()
+        EditorColors.meterBackground.setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 3, yRadius: 3).fill()
 
         let clamped = min(1.2, max(0, level))

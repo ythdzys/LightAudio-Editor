@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.4"><strong>Download Beta 4</strong></a>
+  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.2.0-beta.5"><strong>Download Beta 5</strong></a>
   &nbsp;|&nbsp;
   <a href="https://github.com/ythdzys/LightAudio-Editor/issues/new/choose">Report an issue</a>
   &nbsp;|&nbsp;
@@ -36,8 +36,8 @@ LightAudio Editor provides a timeline-oriented workflow for importing, arranging
 
 ## Download and Install
 
-1. Open the [Beta 4 release](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.4).
-2. Download `LightAudio-Editor-0.1.1-beta-4-ADHOC-UNNOTARIZED.zip`.
+1. Open the [Beta 5 release](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.2.0-beta.5).
+2. Download `LightAudio-Editor-0.2.0-beta-5-ADHOC-UNNOTARIZED.zip`.
 3. Extract the ZIP and move **LightAudio Editor.app** to `/Applications`.
 4. Try to open the app once. If macOS blocks it, approve it under:
    - macOS Ventura and later: **System Settings > Privacy & Security > Open Anyway**
@@ -71,6 +71,7 @@ Both architectures ship in one Universal app. Apple silicon begins with macOS Bi
 ### Timeline and Editing
 
 - Multiple reorderable and collapsible tracks with adjustable heights
+- Light and Dark appearance for the timeline, track controls, waveforms, and inspector
 - Clip move, trim, split, duplicate, ripple delete, nudge, rename, and color labels
 - Multi-selection, marquee selection, grouped editing, clipboard operations, and Option-drag duplication
 - Automatic track creation when media is dropped below existing tracks
@@ -139,7 +140,7 @@ Generated caches are stored under:
 
 **LightAudio Editor > Preferences > Clear App Cache** removes generated waveforms, proxy audio, and recovery snapshots. It does not remove `.liau` projects or original media.
 
-Preferences also show separate waveform, video proxy, and recovery cache sizes, with a refresh control. Choose **System Default**, **Light**, or **Dark** appearance; changes apply immediately.
+Preferences also show separate waveform, video proxy, and recovery cache sizes, with a refresh control. Choose **System Default**, **Light**, or **Dark** under **Preferences > Appearance**; changes apply immediately and are remembered across launches. The timeline, track controls, waveforms, inspector, and meters adapt together.
 
 The interface follows the macOS language by default. Choose **English** or **Simplified Chinese** under **LightAudio Editor > Preferences > Language** to override it; the selected language is applied after restarting the app.
 
@@ -193,7 +194,7 @@ xcodebuild \
   test
 ```
 
-The regression suite covers portable audio-only/full-video collections, cancellation cleanup, decoded-sample comparisons, individual and recursive-folder relinking across supported media extensions, and project validation, localization, save prompts, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, and real bundled M4A/MP3/FLAC exports.
+The regression suite covers portable audio-only/full-video collections, cancellation cleanup, decoded-sample comparisons, individual and recursive-folder relinking across supported media extensions, and project validation, localization, save prompts, recovery, relinking, editing and undo behavior, automation, crossfades, rendering, export safety, cancellation, cache workflows, timeline invalidation, live appearance switching, Light/Dark rendering, clip-label contrast, and real bundled M4A/MP3/FLAC exports.
 
 ## Repository Layout
 

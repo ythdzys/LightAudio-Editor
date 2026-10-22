@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.4"><strong>下载 Beta 4</strong></a>
+  <a href="https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.2.0-beta.5"><strong>下载 Beta 5</strong></a>
   &nbsp;|&nbsp;
   <a href="https://github.com/ythdzys/LightAudio-Editor/issues/new/choose">报告问题</a>
   &nbsp;|&nbsp;
@@ -36,8 +36,8 @@ LightAudio Editor 提供基于时间线的工作流程，支持音频导入、�
 
 ## 下载与安装
 
-1. 打开 [Beta 4 发布页面](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.1.1-beta.4)。
-2. 下载 `LightAudio-Editor-0.1.1-beta-4-ADHOC-UNNOTARIZED.zip`。
+1. 打开 [Beta 5 发布页面](https://github.com/ythdzys/LightAudio-Editor/releases/tag/v0.2.0-beta.5)。
+2. 下载 `LightAudio-Editor-0.2.0-beta-5-ADHOC-UNNOTARIZED.zip`。
 3. 解压 ZIP 文件，将 **LightAudio Editor.app** 移至 `/Applications`。
 4. 尝试打开应用一次。如果 macOS 阻止运行，请在以下位置批准打开：
    - macOS Ventura 及更高版本：**系统设置 > 隐私与安全性 > 仍要打开**
@@ -71,6 +71,7 @@ LightAudio Editor 提供基于时间线的工作流程，支持音频导入、�
 ### 时间线与编辑
 
 - 多轨编辑，支持调整轨道顺序、折叠轨道和调整轨道高度
+- 时间线、轨道控件、波形和检查器均支持浅色与深色外观
 - 片段移动、修剪、分割、复制、波纹删除、微移、重命名和颜色标签
 - 多选、框选、分组编辑、剪贴板操作，以及按住 Option 拖动以复制
 - 将媒体拖放到现有轨道下方时自动创建轨道
@@ -142,7 +143,7 @@ LightAudio Editor 提供基于时间线的工作流程，支持音频导入、�
 
 通过“项目 > 重命名项目”修改当前项目名称，支持撤销。文件夹和批量导入按顺序读取媒体信息，会等待源文件校验完成，支持取消并保留已导入的媒体。
 
-偏好设置还提供跟随系统、浅色和深色外观，以及波形、视频音频代理和恢复快照的缓存用量及刷新功能。
+偏好设置还显示波形、视频音频代理和恢复快照的缓存用量，并提供刷新功能。在**偏好设置 > 外观**中选择**跟随系统**、**浅色**或**深色**，更改立即生效并在下次启动时保留。时间线、轨道控件、波形、检查器和电平表会一同适配所选外观。
 
 ## 键盘快捷键
 
@@ -194,7 +195,7 @@ xcodebuild \
   test
 ```
 
-回归测试涵盖视频仅音频及原始视频项目收集、取消清理、解码样本对比、各种支持的媒体格式的单文件和递归文件夹重新链接，以及项目校验、本地化、保存提示、恢复、重新链接、编辑与撤销行为、自动化、交叉淡化、渲染、导出安全、取消操作、缓存工作流程、时间线失效处理，以及使用内置编码器实际导出 M4A/MP3/FLAC。
+回归测试涵盖视频仅音频及原始视频项目收集、取消清理、解码样本对比、各种支持的媒体格式的单文件和递归文件夹重新链接，以及项目校验、本地化、保存提示、恢复、重新链接、编辑与撤销行为、自动化、交叉淡化、渲染、导出安全、取消操作、缓存工作流程、时间线失效处理、即时外观切换、浅色/深色渲染、片段标签对比度，以及使用内置编码器实际导出 M4A/MP3/FLAC。
 
 ## 仓库结构
 
